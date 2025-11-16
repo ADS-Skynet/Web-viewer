@@ -17,6 +17,7 @@ import time
 import json
 import asyncio
 import websockets
+import yaml
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread, Lock
@@ -68,6 +69,9 @@ class ZMQWebViewer:
         self.verbose = verbose
         self.lkas_mode = lkas_mode
 
+        # Load configuration
+        self.config = self._load_config()
+
         # ZMQ communication
         self.subscriber = ViewerSubscriber(vehicle_url)
         self.action_publisher = ActionPublisher(action_url)
@@ -104,9 +108,12 @@ class ZMQWebViewer:
         self.ws_loop = None  # Will be set when WebSocket server starts
         self.ws_ready = False  # Flag to indicate WebSocket is ready
 
-        # Frame rate limiting for WebSocket
+        # Frame rate limiting for WebSocket (from config)
+        fps_config = self.config.get('fps', {})
         self.last_ws_frame_time = 0
-        self.ws_frame_interval = 1.0 / 80.0  # 80 FPS max
+        self.ws_frame_interval = 1.0 / fps_config.get('websocket_max', 80)
+        self.status_broadcast_interval = 1.0 / fps_config.get('status_broadcast', 2)
+        self.zmq_poll_interval = 1.0 / fps_config.get('zmq_poll', 1000)
 
         self.running = False
 
@@ -119,6 +126,14 @@ class ZMQWebViewer:
         print(f"  Web interface: http://localhost:{web_port}")
         print(f"  WebSocket server: ws://localhost:{self.ws_port}")
         print(f"{'='*60}\n")
+
+    def _load_config(self) -> Dict[str, Any]:
+        """Load configuration from config.yaml file."""
+        config_path = Path(__file__).parent.parent / 'config.yaml'
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                return yaml.safe_load(f) or {}
+        return {}
 
     def start(self):
         """Start viewer (ZMQ polling + HTTP server + WebSocket server)."""
@@ -254,7 +269,7 @@ class ZMQWebViewer:
         while self.running:
             # Poll for new messages
             self.subscriber.poll()
-            time.sleep(0.001)  # Small sleep to prevent busy-wait
+            time.sleep(self.zmq_poll_interval)  # Small sleep to prevent busy-wait
 
         print("[ZMQ] Polling loop stopped")
 
@@ -264,7 +279,7 @@ class ZMQWebViewer:
 
         while self.running:
             self._broadcast_status_ws()
-            time.sleep(0.5)  # Broadcast status every 500ms
+            time.sleep(self.status_broadcast_interval)  # Broadcast status at configured rate
 
         print("[Status] Broadcast loop stopped")
 
@@ -594,7 +609,7 @@ class ZMQWebViewer:
                                     time.sleep(1)
                                     continue
 
-                            time.sleep(0.033)  # ~30 FPS
+                            time.sleep(0.01)  # ~100 FPS
                     except Exception as e:
                         print(f"[HTTP] Stream ended: {e}")
 
