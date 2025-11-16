@@ -22,14 +22,16 @@ from threading import Thread, Lock
 from typing import Optional, Dict, Any, Set
 from dataclasses import dataclass
 
-# Import ZMQ communication and visualization tools
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from simulation.integration.zmq_broadcast import ViewerSubscriber, ActionPublisher, DetectionData, VehicleState, ParameterPublisher
-from simulation.utils.visualizer import LKASVisualizer
-from lkas.detection.core.models import LaneDepartureStatus
+# Import ZMQ communication and visualization tools from skynet-common
+from skynet_common.communication import (
+    ViewerSubscriber,
+    ActionPublisher,
+    DetectionData,
+    VehicleState,
+    ParameterPublisher,
+)
+from skynet_common.visualization import LKASVisualizer
+from skynet_common.types import LaneDepartureStatus
 
 
 class ZMQWebViewer:
@@ -702,31 +704,22 @@ class ZMQWebViewer:
 def main():
     """Main entry point for ZMQ web viewer."""
     import argparse
-    from lkas.detection.core.config import ConfigManager
 
     parser = argparse.ArgumentParser(description="ZMQ Web Viewer - Laptop Side")
-    parser.add_argument('--config', type=str, default=None,
-                       help="Path to configuration file (default: <project-root>/config.yaml)")
     parser.add_argument('--vehicle', type=str, default="tcp://localhost:5557",
                        help="ZMQ URL to receive vehicle data")
     parser.add_argument('--actions', type=str, default="tcp://localhost:5558",
                        help="ZMQ URL to send actions")
     parser.add_argument('--parameters', type=str, default="tcp://localhost:5559",
                        help="ZMQ URL to send parameter updates")
-    parser.add_argument('--port', type=int, default=None,
-                       help="HTTP port for web interface (overrides config, default: from config.yaml)")
+    parser.add_argument('--port', type=int, default=8080,
+                       help="HTTP port for web interface (default: 8080)")
     parser.add_argument('--verbose', action='store_true',
                        help="Enable verbose HTTP request logging")
     parser.add_argument('--simulation-mode', action='store_true',
                        help="Use simulation mode (bind as server). Default is LKAS mode (connect to broker).")
 
     args = parser.parse_args()
-
-    # Load configuration
-    config = ConfigManager.load(args.config)
-
-    # Determine web port: CLI arg overrides config
-    web_port = args.port if args.port is not None else config.visualization.web_port
 
     # Determine mode: LKAS mode (connect to broker) is default
     lkas_mode = not args.simulation_mode
@@ -736,7 +729,7 @@ def main():
         vehicle_url=args.vehicle,
         action_url=args.actions,
         parameter_bind_url=args.parameters,
-        web_port=web_port,
+        web_port=args.port,
         verbose=args.verbose,
         lkas_mode=lkas_mode
     )
