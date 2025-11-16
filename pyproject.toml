@@ -39,8 +39,8 @@ dependencies = [
     "werkzeug>=2.3.0,<4.0.0",
 
     # Inter-module dependencies
-    "skynet-lkas @ git+https://github.com/ADS-Skynet/Lkas.git",
-    "skynet-simulation @ git+git@github.com:ADS-Skynet/Carla-client.git",
+    "skynet-lkas @ git+https://github.com/ADS-Skynet/Lkas.git@split-module",
+    "skynet-simulation @ git+https://github.com/ADS-Skynet/Carla-client.git",
 ]
 
 # Optional dependency groups
@@ -63,10 +63,8 @@ viewer = "viewer.run:main"
 
 # Package discovery (src-layout)
 [tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
+package-dir = {"viewer" = "src"}
+packages = ["viewer"]
 
 [tool.setuptools.package-data]
 "*" = ["*.yaml", "*.yml", "*.json", "*.html", "*.css", "*.js"]

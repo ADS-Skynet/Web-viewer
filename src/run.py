@@ -591,7 +591,7 @@ class ZMQWebViewer:
                                     time.sleep(1)
                                     continue
 
-                            time.sleep(0.01)  # ~100 FPS
+                            time.sleep(0.033)  # ~30 FPS
                     except Exception as e:
                         print(f"[HTTP] Stream ended: {e}")
 
