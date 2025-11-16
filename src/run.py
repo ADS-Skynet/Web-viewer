@@ -17,6 +17,7 @@ import time
 import json
 import asyncio
 import websockets
+from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread, Lock
 from typing import Optional, Dict, Any, Set
