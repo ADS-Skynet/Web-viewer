@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lane Detection Viewer (ZMQ)</title>
+    <style>
+        body {{
+            margin: 0;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }}
+        h1 {{
+            margin: 0 0 20px 0;
+            font-size: 24px;
+            font-weight: 300;
+        }}
+        .container {{
+            max-width: 1200px;
+            width: 100%;
+        }}
+        .video-container {{
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        }}
+        img {{
+            width: 100%;
+            height: auto;
+            display: block;
+        }}
+        .controls {{
+            margin-top: 20px;
+            padding: 15px;
+            background: #2d2d2d;
+            border-radius: 8px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+        .btn {{
+            padding: 10px 20px;
+            background: #4a4a4a;
+            border: none;
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }}
+        .btn:hover {{
+            background: #5a5a5a;
+        }}
+        .btn.primary {{
+            background: #2196F3;
+        }}
+        .btn.primary:hover {{
+            background: #1976D2;
+        }}
+        .btn.warning {{
+            background: #FF9800;
+        }}
+        .btn.warning:hover {{
+            background: #F57C00;
+        }}
+        .info {{
+            margin-top: 20px;
+            padding: 15px;
+            background: #2d2d2d;
+            border-radius: 8px;
+            font-size: 14px;
+        }}
+        .info-item {{
+            margin: 5px 0;
+        }}
+        .badge {{
+            display: inline-block;
+            padding: 2px 8px;
+            background: #4CAF50;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: bold;
+        }}
+        .notification {{
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+        }}
+        .notification.show {{
+            opacity: 1;
+        }}
+        .notification.error {{
+            background: #f44336;
+        }}
+        .params-container {{
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }}
+        .param-section {{
+            padding: 15px;
+            background: #2d2d2d;
+            border-radius: 8px;
+        }}
+        .param-section h3 {{
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            color: #2196F3;
+        }}
+        .param-control {{
+            margin-bottom: 12px;
+        }}
+        .param-control label {{
+            display: block;
+            margin-bottom: 5px;
+            font-size: 13px;
+            color: #aaa;
+        }}
+        .param-control input[type="range"] {{
+            width: 100%;
+            margin-bottom: 5px;
+        }}
+        .param-value {{
+            font-size: 12px;
+            color: #4CAF50;
+            font-family: monospace;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 Lane Detection Viewer <span class="badge" id="modeBadge">WEBSOCKET</span></h1>
+        <div class="video-container">
+            <img id="videoStream" src="" alt="Lane Detection Stream">
+        </div>
+        <div class="controls">
+            <button class="btn primary" onclick="sendAction('respawn')">🔄 Respawn Vehicle</button>
+            <button class="btn warning" id="pauseBtn" onclick="togglePause()">⏸ Pause</button>
+        </div>
+        <div class="info">
+            <div class="info-item">
+                <strong>Mode:</strong> WebSocket Real-Time Streaming
+            </div>
+            <div class="info-item">
+                <strong>Connection:</strong> <span id="wsStatus" style="color: #FF9800;">Connecting...</span>
+            </div>
+            <div class="info-item">
+                <strong>Vehicle URL:</strong> {vehicle_url}
+            </div>
+            <div class="info-item">
+                <strong>FPS:</strong> <span id="fpsDisplay">--</span> | <strong>Latency:</strong> <span id="latencyDisplay">--</span>ms
+            </div>
+        </div>
+
+        <div class="params-container">
+            <div class="param-section">
+                <h3>🔍 Detection Parameters</h3>
+                <div class="param-control">
+                    <label>Canny Low Threshold</label>
+                    <input type="range" id="canny_low" min="1" max="150" value="50" step="1"
+                           oninput="updateParam('detection', 'canny_low', this.value)">
+                    <span class="param-value" id="canny_low_val">50</span>
+                </div>
+                <div class="param-control">
+                    <label>Canny High Threshold</label>
+                    <input type="range" id="canny_high" min="50" max="255" value="150" step="1"
+                           oninput="updateParam('detection', 'canny_high', this.value)">
+                    <span class="param-value" id="canny_high_val">150</span>
+                </div>
+                <div class="param-control">
+                    <label>Hough Threshold</label>
+                    <input type="range" id="hough_threshold" min="1" max="150" value="50" step="1"
+                           oninput="updateParam('detection', 'hough_threshold', this.value)">
+                    <span class="param-value" id="hough_threshold_val">50</span>
+                </div>
+                <div class="param-control">
+                    <label>Hough Min Line Length</label>
+                    <input type="range" id="hough_min_line_len" min="10" max="150" value="40" step="5"
+                           oninput="updateParam('detection', 'hough_min_line_len', this.value)">
+                    <span class="param-value" id="hough_min_line_len_val">40</span>
+                </div>
+                <div class="param-control">
+                    <label>Smoothing Factor</label>
+                    <input type="range" id="smoothing_factor" min="0" max="1" value="0.7" step="0.05"
+                           oninput="updateParam('detection', 'smoothing_factor', this.value)">
+                    <span class="param-value" id="smoothing_factor_val">0.70</span>
+                </div>
+            </div>
+
+            <div class="param-section">
+                <h3>🎯 Decision (PID Control) Parameters</h3>
+                <div class="param-control">
+                    <label>Kp (Proportional Gain)</label>
+                    <input type="range" id="kp" min="0" max="2" value="0.5" step="0.05"
+                           oninput="updateParam('decision', 'kp', this.value)">
+                    <span class="param-value" id="kp_val">0.50</span>
+                </div>
+                <div class="param-control">
+                    <label>Kd (Derivative Gain)</label>
+                    <input type="range" id="kd" min="0" max="1" value="0.1" step="0.05"
+                           oninput="updateParam('decision', 'kd', this.value)">
+                    <span class="param-value" id="kd_val">0.10</span>
+                </div>
+                <div class="param-control">
+                    <label>Base Throttle</label>
+                    <input type="range" id="throttle_base" min="0" max="0.5" value="0.14" step="0.01"
+                           oninput="updateParam('decision', 'throttle_base', this.value)">
+                    <span class="param-value" id="throttle_base_val">0.14</span>
+                </div>
+                <div class="param-control">
+                    <label>Min Throttle</label>
+                    <input type="range" id="throttle_min" min="0" max="0.2" value="0.05" step="0.01"
+                           oninput="updateParam('decision', 'throttle_min', this.value)">
+                    <span class="param-value" id="throttle_min_val">0.05</span>
+                </div>
+                <div class="param-control">
+                    <label>Steer Threshold</label>
+                    <input type="range" id="steer_threshold" min="0" max="0.5" value="0.15" step="0.01"
+                           oninput="updateParam('decision', 'steer_threshold', this.value)">
+                    <span class="param-value" id="steer_threshold_val">0.15</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="notification" id="notification"></div>
+
+    <script>
+        // WebSocket connection
+        let ws = null;
+        let isPaused = false;
+        let reconnectTimer = null;
+        let frameCount = 0;
+        let lastFrameTime = Date.now();
+        let fpsInterval = null;
+
+        // Get WebSocket URL (HTTP port + 1)
+        const wsPort = parseInt(window.location.port || 8080) + 1;
+        const wsUrl = `ws://${{window.location.hostname}}:${{wsPort}}`;
+
+        function connectWebSocket() {{
+            console.log('Connecting to WebSocket:', wsUrl);
+            updateConnectionStatus('Connecting...', '#FF9800');
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function() {{
+                console.log('WebSocket connected');
+                updateConnectionStatus('Connected', '#4CAF50');
+
+                // Clear reconnect timer
+                if (reconnectTimer) {{
+                    clearTimeout(reconnectTimer);
+                    reconnectTimer = null;
+                }}
+
+                // Start FPS counter
+                startFpsCounter();
+            }};
+
+            ws.onmessage = function(event) {{
+                // Check if binary (frame) or text (status)
+                if (event.data instanceof Blob) {{
+                    // Binary frame data
+                    const img = document.getElementById('videoStream');
+                    const url = URL.createObjectURL(event.data);
+
+                    // Clean up old URL
+                    if (img.src && img.src.startsWith('blob:')) {{
+                        URL.revokeObjectURL(img.src);
+                    }}
+
+                    img.src = url;
+
+                    // Update FPS counter
+                    frameCount++;
+
+                    // Latency calculation (approximate, no timestamp in binary)
+                    const now = Date.now();
+                    if (window.lastFrameReceived) {{
+                        const latency = now - window.lastFrameReceived;
+                        document.getElementById('latencyDisplay').textContent = latency.toFixed(0);
+                    }}
+                    window.lastFrameReceived = now;
+
+                }} else {{
+                    // Text message (status)
+                    try {{
+                        const msg = JSON.parse(event.data);
+
+                        if (msg.type === 'status') {{
+                            // Update status
+                            if (msg.state_received) {{
+                                updateButtonState(msg.paused);
+                            }}
+                        }}
+                    }} catch (e) {{
+                        console.error('Error processing message:', e);
+                    }}
+                }}
+            }};
+
+            ws.onerror = function(error) {{
+                console.error('WebSocket error:', error);
+                updateConnectionStatus('Error', '#f44336');
+            }};
+
+            ws.onclose = function() {{
+                console.log('WebSocket disconnected');
+                updateConnectionStatus('Disconnected', '#f44336');
+
+                // Stop FPS counter
+                stopFpsCounter();
+
+                // Attempt to reconnect after 2 seconds
+                reconnectTimer = setTimeout(connectWebSocket, 2000);
+            }};
+        }}
+
+        function updateConnectionStatus(status, color) {{
+            const statusElem = document.getElementById('wsStatus');
+            statusElem.textContent = status;
+            statusElem.style.color = color;
+        }}
+
+        function startFpsCounter() {{
+            frameCount = 0;
+            lastFrameTime = Date.now();
+
+            fpsInterval = setInterval(() => {{
+                const now = Date.now();
+                const elapsed = (now - lastFrameTime) / 1000;
+                const fps = frameCount / elapsed;
+
+                document.getElementById('fpsDisplay').textContent = fps.toFixed(1);
+
+                // Reset counter
+                frameCount = 0;
+                lastFrameTime = now;
+            }}, 1000);
+        }}
+
+        function stopFpsCounter() {{
+            if (fpsInterval) {{
+                clearInterval(fpsInterval);
+                fpsInterval = null;
+            }}
+            document.getElementById('fpsDisplay').textContent = '--';
+            document.getElementById('latencyDisplay').textContent = '--';
+        }}
+
+        function sendWebSocketMessage(message) {{
+            if (ws && ws.readyState === WebSocket.OPEN) {{
+                ws.send(JSON.stringify(message));
+            }} else {{
+                console.error('WebSocket not connected');
+                showNotification('WebSocket not connected', true);
+            }}
+        }}
+
+        function updateParam(category, parameter, value) {{
+            // Update display
+            const displayElem = document.getElementById(parameter + '_val');
+            if (displayElem) {{
+                // Format value based on parameter type
+                if (parameter.includes('throttle') || parameter.includes('kp') ||
+                    parameter.includes('kd') || parameter.includes('steer') ||
+                    parameter.includes('smoothing')) {{
+                    displayElem.textContent = parseFloat(value).toFixed(2);
+                }} else {{
+                    displayElem.textContent = Math.round(value);
+                }}
+            }}
+
+            // Send via WebSocket
+            sendWebSocketMessage({{
+                type: 'parameter',
+                category: category,
+                parameter: parameter,
+                value: parseFloat(value)
+            }});
+        }}
+
+        function updateButtonState(paused) {{
+            isPaused = paused;
+            const btn = document.getElementById('pauseBtn');
+            if (isPaused) {{
+                btn.textContent = '▶️ Resume';
+                btn.classList.add('primary');
+                btn.classList.remove('warning');
+            }} else {{
+                btn.textContent = '⏸ Pause';
+                btn.classList.remove('primary');
+                btn.classList.add('warning');
+            }}
+        }}
+
+        function sendAction(action) {{
+            sendWebSocketMessage({{
+                type: 'action',
+                action: action
+            }});
+            showNotification('Action sent: ' + action);
+        }}
+
+        function togglePause() {{
+            sendAction(isPaused ? 'resume' : 'pause');
+        }}
+
+        function showNotification(message, isError = false) {{
+            const notif = document.getElementById('notification');
+            notif.textContent = message;
+            notif.className = 'notification show' + (isError ? ' error' : '');
+
+            setTimeout(() => {{
+                notif.classList.remove('show');
+            }}, 3000);
+        }}
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {{
+            if (event.key === 'r' || event.key === 'R') {{
+                event.preventDefault();
+                sendAction('respawn');
+            }} else if (event.key === ' ') {{
+                event.preventDefault();
+                togglePause();
+            }}
+        }});
+
+        // Connect to WebSocket on page load
+        window.addEventListener('load', function() {{
+            connectWebSocket();
+        }});
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', function() {{
+            if (ws) {{
+                ws.close();
+            }}
+        }});
+    </script>
+</body>
+</html>
