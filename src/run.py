@@ -119,6 +119,10 @@ class ZMQWebViewer:
         self.status_broadcast_interval = 1.0 / fps_config.get('status_broadcast', 2)
         self.zmq_poll_interval = 1.0 / fps_config.get('zmq_poll', 1000)
 
+        # Streaming quality (from config)
+        streaming_config = self.config.get('streaming', {})
+        self.jpeg_quality = streaming_config.get('jpeg_quality', 80)
+
         self.running = False
 
         print(f"\n{'='*60}")
@@ -181,7 +185,11 @@ class ZMQWebViewer:
         """Called when new frame received from vehicle."""
         self.latest_frame = image
 
-        print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} at {metadata.get('timestamp', 'N/A')}")
+        # Mark stream as active when receiving frames (not just state)
+        if not self.subscriber.state_received:
+            self.subscriber.state_received = True
+
+        # print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} at {metadata.get('timestamp', 'N/A')}")
 
         # Render frame with overlays (on laptop, not vehicle!)
         self._render_frame()
@@ -189,7 +197,8 @@ class ZMQWebViewer:
     def _on_detection_received(self, detection: DetectionData):
         """Called when detection results received."""
         self.latest_detection = detection
-        print(f"[Detection] Received detection with processing time {detection.processing_time_ms:.1f}ms")
+
+        # print(f"[Detection] Received detection with processing time {detection.processing_time_ms:.1f}ms")
         self._render_frame()
 
     def _on_state_received(self, state: VehicleState):
@@ -311,9 +320,9 @@ class ZMQWebViewer:
             if not self.ws_clients:
                 return
 
-        # Encode frame as JPEG (balanced quality/speed)
+        # Encode frame as JPEG (quality from config)
         success, buffer = cv2.imencode('.jpg', self.rendered_frame,
-                                       [cv2.IMWRITE_JPEG_QUALITY, 80])
+                                       [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
         if not success:
             return
 
