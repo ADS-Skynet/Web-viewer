@@ -34,6 +34,7 @@ from skynet_common.communication import (
 )
 from skynet_common.visualization import LKASVisualizer
 from skynet_common.types import LaneDepartureStatus
+from skynet_common.config import ConfigManager
 
 
 class ZMQWebViewer:
@@ -721,15 +722,24 @@ def main():
     """Main entry point for ZMQ web viewer."""
     import argparse
 
+    # Load common config for default communication settings
+    common_config = ConfigManager.load()
+    comm = common_config.communication
+
+    # Build default URLs from common config
+    default_vehicle_url = f"tcp://{comm.zmq_broadcast_host}:{comm.zmq_broadcast_port}"
+    default_action_url = f"tcp://{comm.zmq_broadcast_host}:{comm.zmq_action_port}"
+    default_param_url = f"tcp://*:{comm.zmq_parameter_port}"
+
     parser = argparse.ArgumentParser(description="ZMQ Web Viewer - Laptop Side")
-    parser.add_argument('--vehicle', type=str, default="tcp://localhost:5557",
-                       help="ZMQ URL to receive vehicle data")
-    parser.add_argument('--actions', type=str, default="tcp://localhost:5558",
-                       help="ZMQ URL to send actions")
-    parser.add_argument('--parameters', type=str, default="tcp://localhost:5559",
-                       help="ZMQ URL to send parameter updates")
-    parser.add_argument('--port', type=int, default=8080,
-                       help="HTTP port for web interface (default: 8080)")
+    parser.add_argument('--vehicle', type=str, default=default_vehicle_url,
+                       help=f"ZMQ URL to receive vehicle data (default: {default_vehicle_url})")
+    parser.add_argument('--actions', type=str, default=default_action_url,
+                       help=f"ZMQ URL to send actions (default: {default_action_url})")
+    parser.add_argument('--parameters', type=str, default=default_param_url,
+                       help=f"ZMQ URL to send parameter updates (default: {default_param_url})")
+    parser.add_argument('--port', type=int, default=common_config.visualization.web_port,
+                       help=f"HTTP port for web interface (default: {common_config.visualization.web_port})")
     parser.add_argument('--verbose', action='store_true',
                        help="Enable verbose HTTP request logging")
     parser.add_argument('--simulation-mode', action='store_true',
