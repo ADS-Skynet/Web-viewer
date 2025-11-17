@@ -204,6 +204,9 @@ class ZMQWebViewer:
     def _on_state_received(self, state: VehicleState):
         """Called when vehicle state received."""
         self.latest_state = state
+        # Debug: Log when state is received (especially paused status)
+        if state.paused is not None and self.verbose:
+            print(f"[State] Received: paused={state.paused}, steering={state.steering:.3f}")
         self._render_frame()
 
     def _render_frame(self):
@@ -345,6 +348,8 @@ class ZMQWebViewer:
         if self.latest_state:
             status_data['speed_kmh'] = self.latest_state.speed_kmh
             status_data['steering'] = self.latest_state.steering
+            status_data['throttle'] = self.latest_state.throttle
+            status_data['brake'] = self.latest_state.brake
 
         # Add detection metrics if available
         if self.latest_detection:

@@ -152,7 +152,7 @@
         </div>
         <div class="controls">
             <button class="btn primary" id="respawnBtn" onclick="sendAction('respawn')" style="display: {respawn_display};">🔄 Respawn Vehicle</button>
-            <button class="btn warning" id="pauseBtn" onclick="togglePause()">⏸ Pause</button>
+            <button class="btn warning" id="pauseBtn" onclick="togglePause()">🛑 Stop</button>
         </div>
         <div class="info">
             <div class="info-item">
@@ -160,12 +160,18 @@
             </div>
             <div class="info-item">
                 <strong>Connection:</strong> <span id="wsStatus" style="color: #FF9800;">Connecting...</span>
+                | <strong>Vehicle State:</strong> <span id="stateStatus" style="color: #666;">No data</span>
             </div>
             <div class="info-item">
                 <strong>Source URL:</strong> {vehicle_url}
             </div>
             <div class="info-item">
                 <strong>FPS:</strong> <span id="fpsDisplay">--</span> | <strong>Latency:</strong> <span id="latencyDisplay">--</span>ms
+            </div>
+            <div class="info-item">
+                <strong>Speed:</strong> <span id="speedDisplay">--</span> km/h |
+                <strong>Throttle:</strong> <span id="throttleDisplay" style="color: #4CAF50;">--</span> |
+                <strong>Brake:</strong> <span id="brakeDisplay" style="color: #f44336;">--</span>
             </div>
         </div>
 
@@ -246,6 +252,7 @@
         // WebSocket connection
         let ws = null;
         let isPaused = false;
+        let hasStateData = false;
         let reconnectTimer = null;
         let frameCount = 0;
         let lastFrameTime = Date.now();
@@ -306,9 +313,40 @@
                         const msg = JSON.parse(event.data);
 
                         if (msg.type === 'status') {{
-                            // Update status
-                            if (msg.state_received) {{
+                            // Update state data indicator
+                            if (msg.steering !== undefined || msg.speed_kmh !== undefined) {{
+                                // We have actual vehicle state data
+                                if (!hasStateData) {{
+                                    hasStateData = true;
+                                    const stateElem = document.getElementById('stateStatus');
+                                    stateElem.textContent = 'Receiving';
+                                    stateElem.style.color = '#4CAF50';
+                                }}
+
+                                // Update vehicle telemetry displays
+                                if (msg.speed_kmh !== undefined) {{
+                                    document.getElementById('speedDisplay').textContent = msg.speed_kmh.toFixed(1);
+                                }}
+                                if (msg.throttle !== undefined) {{
+                                    document.getElementById('throttleDisplay').textContent = msg.throttle.toFixed(2);
+                                }}
+                                if (msg.brake !== undefined) {{
+                                    const brakeElem = document.getElementById('brakeDisplay');
+                                    brakeElem.textContent = msg.brake.toFixed(2);
+                                    // Highlight brake when active
+                                    brakeElem.style.color = msg.brake > 0.1 ? '#f44336' : '#888';
+                                }}
+                            }}
+
+                            // Always update button state from paused field
+                            // paused can be true, false, or undefined/null
+                            if (msg.paused !== undefined && msg.paused !== null) {{
                                 updateButtonState(msg.paused);
+                            }}
+
+                            // Debug: log state info
+                            if (msg.steering !== undefined) {{
+                                console.log('Vehicle state: steering=' + msg.steering.toFixed(3) + ', paused=' + msg.paused);
                             }}
                         }}
                     }} catch (e) {{
@@ -406,7 +444,7 @@
                 btn.classList.add('primary');
                 btn.classList.remove('warning');
             }} else {{
-                btn.textContent = '⏸ Pause';
+                btn.textContent = '🛑 Stop';
                 btn.classList.remove('primary');
                 btn.classList.add('warning');
             }}
@@ -421,7 +459,7 @@
         }}
 
         function togglePause() {{
-            sendAction(isPaused ? 'resume' : 'pause');
+            sendAction(isPaused ? 'resume' : 'stop');
         }}
 
         function showNotification(message, isError = false) {{
