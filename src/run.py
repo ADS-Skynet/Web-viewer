@@ -50,7 +50,8 @@ class ZMQWebViewer:
                  parameter_bind_url: str = "tcp://*:5559",
                  web_port: int = 8080,
                  verbose: bool = False,
-                 lkas_mode: bool = True):
+                 lkas_mode: bool = True,
+                 target: str = "simulation"):
         """
         Initialize ZMQ web viewer.
 
@@ -62,6 +63,7 @@ class ZMQWebViewer:
             verbose: Enable verbose HTTP request logging
             lkas_mode: If True, connect to LKAS broker (default, new architecture).
                       If False, bind as server for simulation (old architecture).
+            target: Target to connect to ("simulation" or "vehicle")
         """
         self.vehicle_url = vehicle_url
         self.action_url = action_url
@@ -69,6 +71,7 @@ class ZMQWebViewer:
         self.web_port = web_port
         self.verbose = verbose
         self.lkas_mode = lkas_mode
+        self.target = target
 
         # Load configuration
         self.config = self._load_config()
@@ -121,6 +124,7 @@ class ZMQWebViewer:
         print(f"\n{'='*60}")
         print("ZMQ Web Viewer - Laptop Side (WebSocket Edition)")
         print(f"{'='*60}")
+        print(f"  Target: {target.upper()}")
         print(f"  Receiving from: {vehicle_url}")
         print(f"  Sending actions to: {action_url}")
         print(f"  Parameter server: {parameter_bind_url} ({'connect' if lkas_mode else 'bind'} mode)")
@@ -646,8 +650,12 @@ class ZMQWebViewer:
                     template = f.read()
 
                 # Substitute dynamic values
+                # Hide respawn button for real vehicle (only applicable for simulation)
+                respawn_display = "inline-block" if viewer_self.target == "simulation" else "none"
                 return template.format(
-                    vehicle_url=viewer_self.vehicle_url
+                    vehicle_url=viewer_self.vehicle_url,
+                    target=viewer_self.target.upper(),
+                    respawn_display=respawn_display
                 )
 
         # Start HTTP server with error handling wrapper
@@ -722,6 +730,13 @@ def main():
     """Main entry point for ZMQ web viewer."""
     import argparse
 
+    # Load viewer-specific config for target presets
+    viewer_config_path = Path(__file__).parent.parent / 'config.yaml'
+    viewer_config = {}
+    if viewer_config_path.exists():
+        with open(viewer_config_path, 'r') as f:
+            viewer_config = yaml.safe_load(f) or {}
+
     # Load common config for default communication settings
     common_config = ConfigManager.load()
     comm = common_config.communication
@@ -732,12 +747,15 @@ def main():
     default_param_url = f"tcp://*:{comm.zmq_parameter_port}"
 
     parser = argparse.ArgumentParser(description="ZMQ Web Viewer - Laptop Side")
-    parser.add_argument('--vehicle', type=str, default=default_vehicle_url,
-                       help=f"ZMQ URL to receive vehicle data (default: {default_vehicle_url})")
-    parser.add_argument('--actions', type=str, default=default_action_url,
-                       help=f"ZMQ URL to send actions (default: {default_action_url})")
-    parser.add_argument('--parameters', type=str, default=default_param_url,
-                       help=f"ZMQ URL to send parameter updates (default: {default_param_url})")
+    parser.add_argument('--target', type=str, default='simulation',
+                       choices=['simulation', 'vehicle'],
+                       help="Target to connect to: 'simulation' (CARLA) or 'vehicle' (Jetracer). Default: simulation")
+    parser.add_argument('--vehicle', type=str, default=None,
+                       help=f"ZMQ URL to receive vehicle data (overrides target preset)")
+    parser.add_argument('--actions', type=str, default=None,
+                       help=f"ZMQ URL to send actions (overrides target preset)")
+    parser.add_argument('--parameters', type=str, default=None,
+                       help=f"ZMQ URL to send parameter updates (overrides target preset)")
     parser.add_argument('--port', type=int, default=common_config.visualization.web_port,
                        help=f"HTTP port for web interface (default: {common_config.visualization.web_port})")
     parser.add_argument('--verbose', action='store_true',
@@ -747,17 +765,35 @@ def main():
 
     args = parser.parse_args()
 
+    # Apply target presets
+    targets = viewer_config.get('targets', {})
+    target_config = targets.get(args.target, {})
+
+    # Use preset values or fall back to defaults
+    broadcast_host = target_config.get('broadcast_host', comm.zmq_broadcast_host)
+    broadcast_port = target_config.get('broadcast_port', comm.zmq_broadcast_port)
+    action_port = target_config.get('action_port', comm.zmq_action_port)
+    parameter_port = target_config.get('parameter_port', comm.zmq_parameter_port)
+
+    # Build URLs from preset (or override with explicit args)
+    vehicle_url = args.vehicle or f"tcp://{broadcast_host}:{broadcast_port}"
+    action_url = args.actions or f"tcp://{broadcast_host}:{action_port}"
+    param_url = args.parameters or f"tcp://*:{parameter_port}"
+
     # Determine mode: LKAS mode (connect to broker) is default
     lkas_mode = not args.simulation_mode
 
+    print(f"\n[Viewer] Starting with target: {args.target.upper()}")
+
     # Create and run viewer
     viewer = ZMQWebViewer(
-        vehicle_url=args.vehicle,
-        action_url=args.actions,
-        parameter_bind_url=args.parameters,
+        vehicle_url=vehicle_url,
+        action_url=action_url,
+        parameter_bind_url=param_url,
         web_port=args.port,
         verbose=args.verbose,
-        lkas_mode=lkas_mode
+        lkas_mode=lkas_mode,
+        target=args.target
     )
 
     viewer.start()

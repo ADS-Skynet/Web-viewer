@@ -1,51 +1,46 @@
 # Viewer Module Configuration
+# Module-specific parameters only. Common parameters are in common/config.yaml
 
-# Web Viewer Settings
+# Web Viewer Settings (module-specific)
 web:
   host: "0.0.0.0"
   port: 8080
   debug: false
 
-# ZMQ Connection (subscribe to simulation broadcasts)
+# Target Selection (simulation or vehicle)
+# Use --target flag to switch between presets
+# Both targets now use LKAS broker for broadcasting
+targets:
+  simulation:
+    broadcast_host: "localhost"
+  vehicle:
+    broadcast_host: "localhost"
+
+# ZMQ Connection (module-specific topics)
 zmq:
   broadcast_host: "localhost"
-  broadcast_port: 5557    # Port for frame/detection broadcasting
-  action_port: 5558       # Port for action commands
-  parameter_port: 5559    # Port for parameter updates
   topics:
     - "frame"
     - "detection"
     - "state"
+    - "vehicle_status"
     - "action"
 
-# Visualization
+# Visualization (module-specific display options)
 visualization:
-  # Display options
   show_hud: true
   show_steering: true
   fill_lane: true
   enable_alerts: true
 
-  # Colors (BGR format for OpenCV)
-  color_left_lane: [255, 0, 0]    # Blue
-  color_right_lane: [0, 0, 255]   # Red
-  color_lane_fill: [0, 255, 0]    # Green
-  color_centered: [0, 255, 0]     # Green
-  color_drift: [0, 255, 255]      # Yellow
-  color_departure: [0, 0, 255]    # Red
-
-  # HUD settings
-  hud_font_scale: 0.6
-  hud_thickness: 2
-  hud_margin: 20
-
-# Performance / Frame Rates
+# Performance / Frame Rates (module-specific)
 fps:
   websocket_max: 60        # Max FPS for WebSocket frame broadcast
   status_broadcast: 2      # Status updates per second (Hz)
   zmq_poll: 500            # ZMQ polling rate (Hz)
 
-# System
+# System (module-specific)
 system:
   enable_logging: true
   log_file: "viewer.log"
+

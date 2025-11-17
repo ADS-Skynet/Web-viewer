@@ -146,23 +146,23 @@
 </head>
 <body>
     <div class="container">
-        <h1>🚗 Lane Detection Viewer <span class="badge" id="modeBadge">WEBSOCKET</span></h1>
+        <h1>🚗 Lane Detection Viewer <span class="badge" id="modeBadge">{target}</span></h1>
         <div class="video-container">
             <img id="videoStream" src="" alt="Lane Detection Stream">
         </div>
         <div class="controls">
-            <button class="btn primary" onclick="sendAction('respawn')">🔄 Respawn Vehicle</button>
+            <button class="btn primary" id="respawnBtn" onclick="sendAction('respawn')" style="display: {respawn_display};">🔄 Respawn Vehicle</button>
             <button class="btn warning" id="pauseBtn" onclick="togglePause()">⏸ Pause</button>
         </div>
         <div class="info">
             <div class="info-item">
-                <strong>Mode:</strong> WebSocket Real-Time Streaming
+                <strong>Target:</strong> {target} | <strong>Mode:</strong> WebSocket Real-Time Streaming
             </div>
             <div class="info-item">
                 <strong>Connection:</strong> <span id="wsStatus" style="color: #FF9800;">Connecting...</span>
             </div>
             <div class="info-item">
-                <strong>Vehicle URL:</strong> {vehicle_url}
+                <strong>Source URL:</strong> {vehicle_url}
             </div>
             <div class="info-item">
                 <strong>FPS:</strong> <span id="fpsDisplay">--</span> | <strong>Latency:</strong> <span id="latencyDisplay">--</span>ms
