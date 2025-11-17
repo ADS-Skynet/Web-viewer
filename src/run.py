@@ -181,12 +181,15 @@ class ZMQWebViewer:
         """Called when new frame received from vehicle."""
         self.latest_frame = image
 
+        print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} at {metadata.get('timestamp', 'N/A')}")
+
         # Render frame with overlays (on laptop, not vehicle!)
         self._render_frame()
 
     def _on_detection_received(self, detection: DetectionData):
         """Called when detection results received."""
         self.latest_detection = detection
+        print(f"[Detection] Received detection with processing time {detection.processing_time_ms:.1f}ms")
         self._render_frame()
 
     def _on_state_received(self, state: VehicleState):

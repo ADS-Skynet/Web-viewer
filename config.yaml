@@ -35,7 +35,7 @@ visualization:
 
 # Performance / Frame Rates (module-specific)
 fps:
-  websocket_max: 60        # Max FPS for WebSocket frame broadcast
+  websocket_max: 100       # Max FPS for WebSocket frame broadcast
   status_broadcast: 2      # Status updates per second (Hz)
   zmq_poll: 500            # ZMQ polling rate (Hz)
 
