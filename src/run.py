@@ -123,6 +123,10 @@ class ZMQWebViewer:
         streaming_config = self.config.get('streaming', {})
         self.jpeg_quality = streaming_config.get('jpeg_quality', 80)
 
+        # ROI overlay cache (to avoid loading config on every frame)
+        # self.roi_vertices_cache: Optional[np.ndarray] = None
+        # self.roi_cache_frame_size: Optional[tuple] = None
+
         self.running = False
 
         print(f"\n{'='*60}")
@@ -222,6 +226,34 @@ class ZMQWebViewer:
         # Start with original frame
         output = self.latest_frame.copy()
 
+        # Draw ROI overlay (green trapezoid showing detection area)
+        # Calculate ROI vertices (cached to avoid config loading on every frame)
+        # try:
+        #     height, width = output.shape[:2]
+        #     current_frame_size = (height, width)
+
+        #     # Recalculate ROI if frame size changed or not cached
+        #     if self.roi_cache_frame_size != current_frame_size:
+        #         from skynet_common.config import ConfigManager
+        #         config = ConfigManager.load()
+        #         lane_config = config.lane_analyzer
+
+        #         # Calculate ROI vertices from config parameters
+        #         self.roi_vertices_cache = np.array([[
+        #             [int(width * lane_config.roi_bottom_left_x), height],
+        #             [int(width * lane_config.roi_top_left_x), int(height * lane_config.roi_top_y)],
+        #             [int(width * lane_config.roi_top_right_x), int(height * lane_config.roi_top_y)],
+        #             [int(width * lane_config.roi_bottom_right_x), height]
+        #         ]], dtype=np.int32)
+        #         self.roi_cache_frame_size = current_frame_size
+
+        #     # Draw ROI as green polyline
+        #     if self.roi_vertices_cache is not None:
+        #         cv2.polylines(output, self.roi_vertices_cache, True, (0, 255, 0), 2)
+        # except Exception as e:
+        #     # If ROI drawing fails, continue without it
+        #     pass
+
         # Draw lane overlays if detection available
         if self.latest_detection:
             left_lane = None
@@ -299,6 +331,11 @@ class ZMQWebViewer:
 
         while self.running:
             self._broadcast_status_ws()
+
+            # # Invalidate ROI cache periodically to pick up parameter changes
+            # # This allows ROI to update when user adjusts ROI parameters in viewer
+            # self.roi_cache_frame_size = None
+
             time.sleep(self.status_broadcast_interval)  # Broadcast status at configured rate
 
         print("[Status] Broadcast loop stopped")

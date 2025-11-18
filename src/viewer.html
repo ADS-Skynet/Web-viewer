@@ -219,6 +219,12 @@
                     <span class="param-value" id="kp_val">0.50</span>
                 </div>
                 <div class="param-control">
+                    <label>Ki (Integral Gain)</label>
+                    <input type="range" id="ki" min="0" max="0.5" value="0.01" step="0.005"
+                           oninput="updateParam('decision', 'ki', this.value)">
+                    <span class="param-value" id="ki_val">0.01</span>
+                </div>
+                <div class="param-control">
                     <label>Kd (Derivative Gain)</label>
                     <input type="range" id="kd" min="0" max="1" value="0.1" step="0.05"
                            oninput="updateParam('decision', 'kd', this.value)">
@@ -241,6 +247,46 @@
                     <input type="range" id="steer_threshold" min="0" max="0.5" value="0.15" step="0.01"
                            oninput="updateParam('decision', 'steer_threshold', this.value)">
                     <span class="param-value" id="steer_threshold_val">0.15</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="params-container">
+            <div class="param-section">
+                <h3>📐 ROI (Region of Interest) Parameters</h3>
+                <div class="param-control">
+                    <label>ROI Bottom Left X</label>
+                    <input type="range" id="roi_bottom_left_x" min="0" max="0.3" value="0.05" step="0.01"
+                           oninput="updateParam('detection', 'roi_bottom_left_x', this.value)">
+                    <span class="param-value" id="roi_bottom_left_x_val">0.05</span>
+                </div>
+                <div class="param-control">
+                    <label>ROI Top Left X</label>
+                    <input type="range" id="roi_top_left_x" min="0.2" max="0.5" value="0.35" step="0.01"
+                           oninput="updateParam('detection', 'roi_top_left_x', this.value)">
+                    <span class="param-value" id="roi_top_left_x_val">0.35</span>
+                </div>
+                <div class="param-control">
+                    <label>ROI Top Right X</label>
+                    <input type="range" id="roi_top_right_x" min="0.5" max="0.8" value="0.65" step="0.01"
+                           oninput="updateParam('detection', 'roi_top_right_x', this.value)">
+                    <span class="param-value" id="roi_top_right_x_val">0.65</span>
+                </div>
+            </div>
+
+            <div class="param-section">
+                <h3>📐 ROI Parameters (continued)</h3>
+                <div class="param-control">
+                    <label>ROI Bottom Right X</label>
+                    <input type="range" id="roi_bottom_right_x" min="0.7" max="1.0" value="0.95" step="0.01"
+                           oninput="updateParam('detection', 'roi_bottom_right_x', this.value)">
+                    <span class="param-value" id="roi_bottom_right_x_val">0.95</span>
+                </div>
+                <div class="param-control">
+                    <label>ROI Top Y</label>
+                    <input type="range" id="roi_top_y" min="0.3" max="0.7" value="0.5" step="0.01"
+                           oninput="updateParam('detection', 'roi_top_y', this.value)">
+                    <span class="param-value" id="roi_top_y_val">0.50</span>
                 </div>
             </div>
         </div>
@@ -419,8 +465,9 @@
             if (displayElem) {{
                 // Format value based on parameter type
                 if (parameter.includes('throttle') || parameter.includes('kp') ||
-                    parameter.includes('kd') || parameter.includes('steer') ||
-                    parameter.includes('smoothing')) {{
+                    parameter.includes('ki') || parameter.includes('kd') ||
+                    parameter.includes('steer') || parameter.includes('smoothing') ||
+                    parameter.includes('roi')) {{
                     displayElem.textContent = parseFloat(value).toFixed(2);
                 }} else {{
                     displayElem.textContent = Math.round(value);
