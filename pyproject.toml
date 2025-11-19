@@ -69,7 +69,7 @@ package-dir = {"viewer" = "src"}
 packages = ["viewer"]
 
 [tool.setuptools.package-data]
-"*" = ["*.yaml", "*.yml", "*.json", "*.html", "*.css", "*.js"]
+viewer = ["*.html", "*.css", "*.js"]
 
 # Black code formatter configuration
 [tool.black]

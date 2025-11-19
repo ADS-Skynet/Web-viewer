@@ -17,7 +17,6 @@ import time
 import json
 import asyncio
 import websockets
-import yaml
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread, Lock
@@ -35,6 +34,9 @@ from skynet_common.communication import (
 from skynet_common.visualization import LKASVisualizer
 from skynet_common.types import LaneDepartureStatus
 from skynet_common.config import ConfigManager
+
+# Import module-specific constants
+from viewer.constants import FPS, Streaming, ROI, get_target_config
 
 
 class ZMQWebViewer:
@@ -73,9 +75,6 @@ class ZMQWebViewer:
         self.lkas_mode = lkas_mode
         self.target = target
 
-        # Load configuration
-        self.config = self._load_config()
-
         # ZMQ communication
         self.subscriber = ViewerSubscriber(vehicle_url)
         self.action_publisher = ActionPublisher(action_url)
@@ -112,28 +111,26 @@ class ZMQWebViewer:
         self.ws_loop = None  # Will be set when WebSocket server starts
         self.ws_ready = False  # Flag to indicate WebSocket is ready
 
-        # Frame rate limiting for WebSocket (from config)
-        fps_config = self.config.get('fps', {})
+        # Frame rate limiting for WebSocket (from constants)
         self.last_ws_frame_time = 0
-        self.ws_frame_interval = 1.0 / fps_config.get('websocket_max', 80)
-        self.status_broadcast_interval = 1.0 / fps_config.get('status_broadcast', 2)
-        self.zmq_poll_interval = 1.0 / fps_config.get('zmq_poll', 1000)
+        self.ws_frame_interval = 1.0 / FPS.WEBSOCKET_MAX
+        self.status_broadcast_interval = 1.0 / FPS.STATUS_BROADCAST
+        self.zmq_poll_interval = 1.0 / FPS.ZMQ_POLL
 
-        # Streaming quality (from config)
-        streaming_config = self.config.get('streaming', {})
-        self.jpeg_quality = streaming_config.get('jpeg_quality', 80)
+        # Streaming quality (from constants)
+        self.jpeg_quality = Streaming.JPEG_QUALITY
 
-        # ROI overlay cache (to avoid loading config on every frame)
+        # ROI overlay cache (to avoid recomputing on every frame)
         self.roi_vertices_cache: Optional[np.ndarray] = None
         self.roi_cache_frame_size: Optional[tuple] = None
 
         # Load ROI config parameters once during initialization
         self.roi_config = {
-            'roi_bottom_left_x': self.config.get('cv_detector', {}).get('roi_bottom_left_x', 0.05),
-            'roi_top_left_x': self.config.get('cv_detector', {}).get('roi_top_left_x', 0.35),
-            'roi_top_right_x': self.config.get('cv_detector', {}).get('roi_top_right_x', 0.65),
-            'roi_bottom_right_x': self.config.get('cv_detector', {}).get('roi_bottom_right_x', 0.95),
-            'roi_top_y': self.config.get('cv_detector', {}).get('roi_top_y', 0.5),
+            'roi_bottom_left_x': ROI.BOTTOM_LEFT_X,
+            'roi_top_left_x': ROI.TOP_LEFT_X,
+            'roi_top_right_x': ROI.TOP_RIGHT_X,
+            'roi_bottom_right_x': ROI.BOTTOM_RIGHT_X,
+            'roi_top_y': ROI.TOP_Y,
         }
 
         self.running = False
@@ -148,14 +145,6 @@ class ZMQWebViewer:
         print(f"  Web interface: http://localhost:{web_port}")
         print(f"  WebSocket server: ws://localhost:{self.ws_port}")
         print(f"{'='*60}\n")
-
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from config.yaml file."""
-        config_path = Path(__file__).parent.parent / 'config.yaml'
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                return yaml.safe_load(f) or {}
-        return {}
 
     def start(self):
         """Start viewer (ZMQ polling + HTTP server + WebSocket server)."""
@@ -202,7 +191,7 @@ class ZMQWebViewer:
         if not self.subscriber.state_received:
             self.subscriber.state_received = True
 
-        # print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} at {metadata.get('timestamp', 'N/A')}")
+        print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} at {metadata.get('timestamp', 'N/A')}")
 
         # Render frame with overlays (on laptop, not vehicle!)
         self._render_frame()
@@ -807,13 +796,6 @@ def main():
     """Main entry point for ZMQ web viewer."""
     import argparse
 
-    # Load viewer-specific config for target presets
-    viewer_config_path = Path(__file__).parent.parent / 'config.yaml'
-    viewer_config = {}
-    if viewer_config_path.exists():
-        with open(viewer_config_path, 'r') as f:
-            viewer_config = yaml.safe_load(f) or {}
-
     # Load common config for default communication settings
     common_config = ConfigManager.load()
     comm = common_config.communication
@@ -824,7 +806,7 @@ def main():
     default_param_url = f"tcp://*:{comm.zmq_parameter_port}"
 
     parser = argparse.ArgumentParser(description="ZMQ Web Viewer - Laptop Side")
-    parser.add_argument('--target', type=str, default='simulation',
+    parser.add_argument('--target', type=str, default='vehicle',
                        choices=['simulation', 'vehicle'],
                        help="Target to connect to: 'simulation' (CARLA) or 'vehicle' (Jetracer). Default: simulation")
     parser.add_argument('--vehicle', type=str, default=None,
@@ -842,15 +824,14 @@ def main():
 
     args = parser.parse_args()
 
-    # Apply target presets
-    targets = viewer_config.get('targets', {})
-    target_config = targets.get(args.target, {})
+    # Apply target presets from constants
+    target_config = get_target_config(args.target)
 
     # Use preset values or fall back to defaults
     broadcast_host = target_config.get('broadcast_host', comm.zmq_broadcast_host)
-    broadcast_port = target_config.get('broadcast_port', comm.zmq_broadcast_port)
-    action_port = target_config.get('action_port', comm.zmq_action_port)
-    parameter_port = target_config.get('parameter_port', comm.zmq_parameter_port)
+    broadcast_port = comm.zmq_broadcast_port
+    action_port = comm.zmq_action_port
+    parameter_port = comm.zmq_parameter_port
 
     # Build URLs from preset (or override with explicit args)
     vehicle_url = args.vehicle or f"tcp://{broadcast_host}:{broadcast_port}"
