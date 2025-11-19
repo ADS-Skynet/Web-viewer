@@ -124,8 +124,17 @@ class ZMQWebViewer:
         self.jpeg_quality = streaming_config.get('jpeg_quality', 80)
 
         # ROI overlay cache (to avoid loading config on every frame)
-        # self.roi_vertices_cache: Optional[np.ndarray] = None
-        # self.roi_cache_frame_size: Optional[tuple] = None
+        self.roi_vertices_cache: Optional[np.ndarray] = None
+        self.roi_cache_frame_size: Optional[tuple] = None
+
+        # Load ROI config parameters once during initialization
+        self.roi_config = {
+            'roi_bottom_left_x': self.config.get('cv_detector', {}).get('roi_bottom_left_x', 0.05),
+            'roi_top_left_x': self.config.get('cv_detector', {}).get('roi_top_left_x', 0.35),
+            'roi_top_right_x': self.config.get('cv_detector', {}).get('roi_top_right_x', 0.65),
+            'roi_bottom_right_x': self.config.get('cv_detector', {}).get('roi_bottom_right_x', 0.95),
+            'roi_top_y': self.config.get('cv_detector', {}).get('roi_top_y', 0.5),
+        }
 
         self.running = False
 
@@ -228,31 +237,28 @@ class ZMQWebViewer:
 
         # Draw ROI overlay (green trapezoid showing detection area)
         # Calculate ROI vertices (cached to avoid config loading on every frame)
-        # try:
-        #     height, width = output.shape[:2]
-        #     current_frame_size = (height, width)
+        try:
+            height, width = output.shape[:2]
+            current_frame_size = (height, width)
 
-        #     # Recalculate ROI if frame size changed or not cached
-        #     if self.roi_cache_frame_size != current_frame_size:
-        #         from skynet_common.config import ConfigManager
-        #         config = ConfigManager.load()
-        #         lane_config = config.lane_analyzer
+            # Recalculate ROI if frame size changed or not cached
+            if self.roi_cache_frame_size != current_frame_size:
+                # Use cached ROI config from initialization (no file I/O!)
+                self.roi_vertices_cache = np.array([[
+                    [int(width * self.roi_config['roi_bottom_left_x']), height],
+                    [int(width * self.roi_config['roi_top_left_x']), int(height * self.roi_config['roi_top_y'])],
+                    [int(width * self.roi_config['roi_top_right_x']), int(height * self.roi_config['roi_top_y'])],
+                    [int(width * self.roi_config['roi_bottom_right_x']), height]
+                ]], dtype=np.int32)
+                self.roi_cache_frame_size = current_frame_size
 
-        #         # Calculate ROI vertices from config parameters
-        #         self.roi_vertices_cache = np.array([[
-        #             [int(width * lane_config.roi_bottom_left_x), height],
-        #             [int(width * lane_config.roi_top_left_x), int(height * lane_config.roi_top_y)],
-        #             [int(width * lane_config.roi_top_right_x), int(height * lane_config.roi_top_y)],
-        #             [int(width * lane_config.roi_bottom_right_x), height]
-        #         ]], dtype=np.int32)
-        #         self.roi_cache_frame_size = current_frame_size
-
-        #     # Draw ROI as green polyline
-        #     if self.roi_vertices_cache is not None:
-        #         cv2.polylines(output, self.roi_vertices_cache, True, (0, 255, 0), 2)
-        # except Exception as e:
-        #     # If ROI drawing fails, continue without it
-        #     pass
+            # Draw ROI as green polyline
+            if self.roi_vertices_cache is not None:
+                cv2.polylines(output, self.roi_vertices_cache, True, (0, 255, 0), 2)
+        except Exception as e:
+            print(f"[Viewer] Warning: Failed to draw ROI overlay: {e}")
+            # If ROI drawing fails, continue without it
+            pass
 
         # Draw lane overlays if detection available
         if self.latest_detection:
@@ -466,6 +472,15 @@ class ZMQWebViewer:
                         category = data.get('category')
                         parameter = data.get('parameter')
                         value = float(data.get('value'))
+
+                        # Update local ROI config if it's a ROI parameter
+                        if parameter.startswith('roi_'):
+                            self.roi_config[parameter] = value
+                            # Invalidate ROI cache to force recalculation with new parameters
+                            self.roi_cache_frame_size = None
+                            if self.verbose:
+                                print(f"[ROI] Updated local ROI config: {parameter} = {value}")
+
                         self.parameter_publisher.send_parameter(category, parameter, value)
                         if self.verbose:
                             print(f"[WebSocket] Parameter from {client_addr}: {category}.{parameter} = {value}")
@@ -599,6 +614,14 @@ class ZMQWebViewer:
                         category = data.get('category')  # 'detection' or 'decision'
                         parameter = data.get('parameter')
                         value = float(data.get('value'))
+
+                        # Update local ROI config if it's a ROI parameter
+                        if parameter.startswith('roi_'):
+                            viewer_self.roi_config[parameter] = value
+                            # Invalidate ROI cache to force recalculation with new parameters
+                            viewer_self.roi_cache_frame_size = None
+                            if viewer_self.verbose:
+                                print(f"[ROI] Updated local ROI config: {parameter} = {value}")
 
                         # Send parameter update via ZMQ
                         viewer_self.parameter_publisher.send_parameter(category, parameter, value)
