@@ -88,6 +88,7 @@ class ZMQWebViewer:
 
         # Latest data from vehicle
         self.latest_frame: Optional[np.ndarray] = None
+        self.latest_frame_metadata: Dict[str, Any] = {}  # Store metadata for latency display
         self.latest_detection: Optional[DetectionData] = None
         self.latest_state: Optional[VehicleState] = None
         self.latest_metrics: Dict[str, Any] = {}
@@ -186,22 +187,28 @@ class ZMQWebViewer:
     def _on_frame_received(self, image: np.ndarray, metadata: Dict):
         """Called when new frame received from vehicle."""
         self.latest_frame = image
+        self.latest_frame_metadata = metadata  # Store for latency calculation
 
         # Mark stream as active when receiving frames (not just state)
         if not self.subscriber.state_received:
             self.subscriber.state_received = True
 
-        print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} at {metadata.get('timestamp', 'N/A')}")
+        # Calculate latency for logging (only if verbose)
+        if self.verbose:
+            frame_timestamp = metadata.get('timestamp', 0)
+            current_time = time.time()
+            latency_ms = (current_time - frame_timestamp) * 1000 if frame_timestamp > 0 else 0
+            print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} | Latency: {latency_ms:.1f}ms | Decode: {metadata.get('decode_time_ms', 0):.1f}ms")
 
-        # Render frame with overlays (on laptop, not vehicle!)
+        # Render frame with overlays ONLY when frame arrives (not on detection/state updates)
+        # This prevents triple rendering which was causing 30-39ms per frame!
         self._render_frame()
 
     def _on_detection_received(self, detection: DetectionData):
         """Called when detection results received."""
         self.latest_detection = detection
-
-        # print(f"[Detection] Received detection with processing time {detection.processing_time_ms:.1f}ms")
-        self._render_frame()
+        # DON'T render here - wait for next frame
+        # This prevents duplicate rendering which was causing lag
 
     def _on_state_received(self, state: VehicleState):
         """Called when vehicle state received."""
@@ -209,7 +216,8 @@ class ZMQWebViewer:
         # Debug: Log when state is received (especially paused status)
         if state.paused is not None and self.verbose:
             print(f"[State] Received: paused={state.paused}, steering={state.steering:.3f}")
-        self._render_frame()
+        # DON'T render here - wait for next frame
+        # This prevents duplicate rendering which was causing lag
 
     def _render_frame(self):
         """
@@ -218,11 +226,17 @@ class ZMQWebViewer:
         THIS RUNS ON LAPTOP, NOT VEHICLE!
         Heavy drawing operations don't impact vehicle performance.
         """
+        render_start = time.time()  # MEASURE TOTAL RENDER TIME
+
         if self.latest_frame is None:
             return
 
         # Start with original frame
+        if self.verbose:
+            copy_start = time.time()
         output = self.latest_frame.copy()
+        if self.verbose:
+            copy_time_ms = (time.time() - copy_start) * 1000
 
         # Draw ROI overlay (green trapezoid showing detection area)
         # Calculate ROI vertices (cached to avoid config loading on every frame)
@@ -250,7 +264,12 @@ class ZMQWebViewer:
             pass
 
         # Draw lane overlays if detection available
+        if self.verbose:
+            lane_draw_time_ms = 0
         if self.latest_detection:
+            if self.verbose:
+                lane_start = time.time()
+
             left_lane = None
             right_lane = None
 
@@ -264,9 +283,16 @@ class ZMQWebViewer:
 
             # Draw lanes
             output = self.visualizer.draw_lanes(output, left_lane, right_lane, fill_lane=True)
+            if self.verbose:
+                lane_draw_time_ms = (time.time() - lane_start) * 1000
 
         # Draw vehicle state overlay if available
+        if self.verbose:
+            hud_draw_time_ms = 0
         if self.latest_state:
+            if self.verbose:
+                hud_start = time.time()
+
             vehicle_telemetry = {
                 'speed_kmh': self.latest_state.speed_kmh,
                 'position': self.latest_state.position,
@@ -289,25 +315,92 @@ class ZMQWebViewer:
                 steering_value=self.latest_state.steering,
                 vehicle_telemetry=vehicle_telemetry
             )
+            if self.verbose:
+                hud_draw_time_ms = (time.time() - hud_start) * 1000
 
-            # Add performance info
-            if self.latest_detection:
+        # Add performance overlay (bottom-left corner) - only in verbose mode
+        if self.verbose and self.latest_frame_metadata:
+            frame_timestamp = self.latest_frame_metadata.get('timestamp', 0)
+            frame_id = self.latest_frame_metadata.get('frame_id', 'N/A')
+            decode_time = self.latest_frame_metadata.get('decode_time_ms', 0)
+
+            if frame_timestamp > 0:
+                current_time = time.time()
+                latency_ms = (current_time - frame_timestamp) * 1000
+
+                # Color-code latency: green (<100ms), yellow (100-500ms), red (>500ms)
+                if latency_ms < 100:
+                    color = (0, 255, 0)  # Green
+                elif latency_ms < 500:
+                    color = (0, 255, 255)  # Yellow
+                else:
+                    color = (0, 0, 255)  # Red
+
+                # Display in bottom-left corner
+                y_pos = output.shape[0] - 60
+
+                # Frame ID and latency
                 cv2.putText(
                     output,
-                    f"Detection: {self.latest_detection.processing_time_ms:.1f}ms",
-                    (10, output.shape[0] - 10),
+                    f"Frame: {frame_id} | Latency: {latency_ms:.1f}ms",
+                    (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
-                    (255, 255, 255),
+                    color,
                     1
                 )
 
+                # Decode time if available
+                if decode_time > 0:
+                    decode_color = (0, 255, 255) if decode_time < 30 else (0, 0, 255)
+                    cv2.putText(
+                        output,
+                        f"Decode: {decode_time:.1f}ms",
+                        (10, y_pos + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        decode_color,
+                        1
+                    )
+
+                # Detection time if available
+                if self.latest_detection:
+                    cv2.putText(
+                        output,
+                        f"Detection: {self.latest_detection.processing_time_ms:.1f}ms",
+                        (10, y_pos + 40),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (255, 255, 255),
+                        1
+                    )
+
         # Store rendered frame
+        if self.verbose:
+            store_start = time.time()
         with self.render_lock:
             self.rendered_frame = output
+        if self.verbose:
+            store_time_ms = (time.time() - store_start) * 1000
+
+        # Calculate total render time (only measure if verbose)
+        if self.verbose:
+            total_render_time_ms = (time.time() - render_start) * 1000
+
+            # Log timing breakdown if render is slow (>10ms)
+            if total_render_time_ms > 10:
+                print(f"  [RENDER] Total: {total_render_time_ms:.1f}ms | Copy: {copy_time_ms:.1f}ms | Lanes: {lane_draw_time_ms:.1f}ms | HUD: {hud_draw_time_ms:.1f}ms | Store: {store_time_ms:.1f}ms")
 
         # Broadcast frame to WebSocket clients
+        if self.verbose:
+            ws_start = time.time()
         self._broadcast_frame_ws()
+        if self.verbose:
+            ws_time_ms = (time.time() - ws_start) * 1000
+
+            # Log WebSocket timing if slow (>10ms)
+            if ws_time_ms > 10:
+                print(f"  [WEBSOCKET] Broadcast took {ws_time_ms:.1f}ms")
 
     def _zmq_poll_loop(self):
         """ZMQ polling loop (runs in separate thread)."""
@@ -353,19 +446,37 @@ class ZMQWebViewer:
         # Remove disconnected clients
         with self.ws_lock:
             if not self.ws_clients:
-                return
+                return  # No clients, skip encoding entirely
 
         # Encode frame as JPEG (quality from config)
+        if self.verbose:
+            encode_start = time.time()
         success, buffer = cv2.imencode('.jpg', self.rendered_frame,
                                        [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+        if self.verbose:
+            encode_time_ms = (time.time() - encode_start) * 1000
+
         if not success:
             return
 
         # Send binary frame directly (no base64!)
         frame_bytes = buffer.tobytes()
+        frame_size_kb = len(frame_bytes) / 1024
+
+        # Log if JPEG encoding is slow (>10ms) or produces large files (only if verbose)
+        if self.verbose and (encode_time_ms > 10 or frame_size_kb > 100):
+            print(f"  [WS JPEG] Encode: {encode_time_ms:.1f}ms | Size: {frame_size_kb:.1f}KB | Clients: {len(self.ws_clients)}")
 
         # Broadcast binary to all connected clients
+        if self.verbose:
+            broadcast_start = time.time()
         self._broadcast_ws_binary(frame_bytes)
+        if self.verbose:
+            broadcast_time_ms = (time.time() - broadcast_start) * 1000
+
+            # Log if broadcasting is slow
+            if broadcast_time_ms > 10:
+                print(f"  [WS SEND] Broadcast to {len(self.ws_clients)} clients took {broadcast_time_ms:.1f}ms")
 
     def _broadcast_status_ws(self):
         """Broadcast status to all WebSocket clients."""
