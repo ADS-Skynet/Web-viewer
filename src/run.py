@@ -219,6 +219,45 @@ class ZMQWebViewer:
         # DON'T render here - wait for next frame
         # This prevents duplicate rendering which was causing lag
 
+    def _calculate_lane_metrics(self, frame_width: int, frame_height: int) -> Dict[str, Any]:
+        """
+        Extract lane departure metrics from detection data received from LKAS.
+
+        Metrics are calculated in LKAS and sent via ZMQ, ensuring single source of truth.
+
+        Args:
+            frame_width: Frame width in pixels (unused, kept for compatibility)
+            frame_height: Frame height in pixels (unused, kept for compatibility)
+
+        Returns:
+            Dictionary with metrics compatible with visualizer
+        """
+        # Default metrics if no detection data available
+        if not self.latest_detection:
+            return {
+                'departure_status': LaneDepartureStatus.NO_LANES,
+                'lateral_offset_meters': None,
+                'heading_angle_deg': None,
+                'lane_width_pixels': None
+            }
+
+        # Extract metrics from detection data (calculated by LKAS)
+        departure_status = LaneDepartureStatus.NO_LANES
+        if self.latest_detection.departure_status:
+            # Convert string back to enum
+            try:
+                departure_status = LaneDepartureStatus(self.latest_detection.departure_status)
+            except ValueError:
+                # If invalid status string, default to NO_LANES
+                departure_status = LaneDepartureStatus.NO_LANES
+
+        return {
+            'departure_status': departure_status,
+            'lateral_offset_meters': self.latest_detection.lateral_offset_meters,
+            'heading_angle_deg': self.latest_detection.heading_angle_deg,
+            'lane_width_pixels': self.latest_detection.lane_width_pixels
+        }
+
     def _render_frame(self):
         """
         Render frame with overlays.
@@ -295,17 +334,14 @@ class ZMQWebViewer:
 
             vehicle_telemetry = {
                 'speed_kmh': self.latest_state.speed_kmh,
+                'throttle': self.latest_state.throttle,
                 'position': self.latest_state.position,
                 'rotation': self.latest_state.rotation
             }
 
-            # Create metrics dict for HUD
-            metrics = {
-                'departure_status': LaneDepartureStatus.CENTERED,  # TODO: Calculate from lanes
-                'lateral_offset_meters': None,  # TODO: Calculate
-                'heading_angle_deg': None,  # TODO: Calculate
-                'lane_width_pixels': None  # TODO: Calculate
-            }
+            # Calculate lane metrics from detection data
+            height, width = output.shape[:2]
+            metrics = self._calculate_lane_metrics(width, height)
 
             # Draw HUD with vehicle data
             output = self.visualizer.draw_hud(
