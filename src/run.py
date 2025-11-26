@@ -36,7 +36,7 @@ from skynet_common.types import LaneDepartureStatus
 from skynet_common.config import ConfigManager
 
 # Import module-specific constants
-from viewer.constants import FPS, Streaming, ROI, get_target_config
+from viewer.constants import FPS, Streaming, get_target_config
 
 
 class ZMQWebViewer:
@@ -125,13 +125,14 @@ class ZMQWebViewer:
         self.roi_vertices_cache: Optional[np.ndarray] = None
         self.roi_cache_frame_size: Optional[tuple] = None
 
-        # Load ROI config parameters once during initialization
+        # Load ROI config parameters once during initialization from common config
+        config = ConfigManager.load()
         self.roi_config = {
-            'roi_bottom_left_x': ROI.BOTTOM_LEFT_X,
-            'roi_top_left_x': ROI.TOP_LEFT_X,
-            'roi_top_right_x': ROI.TOP_RIGHT_X,
-            'roi_bottom_right_x': ROI.BOTTOM_RIGHT_X,
-            'roi_top_y': ROI.TOP_Y,
+            'roi_bottom_left_x': config.cv_detector.roi_bottom_left_x,
+            'roi_top_left_x': config.cv_detector.roi_top_left_x,
+            'roi_top_right_x': config.cv_detector.roi_top_right_x,
+            'roi_bottom_right_x': config.cv_detector.roi_bottom_right_x,
+            'roi_top_y': config.cv_detector.roi_top_y,
         }
 
         self.running = False
@@ -868,7 +869,12 @@ class ZMQWebViewer:
                 return template.format(
                     vehicle_url=viewer_self.vehicle_url,
                     target=viewer_self.target.upper(),
-                    respawn_display=respawn_display
+                    respawn_display=respawn_display,
+                    roi_bottom_left_x=viewer_self.roi_config['roi_bottom_left_x'],
+                    roi_top_left_x=viewer_self.roi_config['roi_top_left_x'],
+                    roi_top_right_x=viewer_self.roi_config['roi_top_right_x'],
+                    roi_bottom_right_x=viewer_self.roi_config['roi_bottom_right_x'],
+                    roi_top_y=viewer_self.roi_config['roi_top_y']
                 )
 
         # Start HTTP server with error handling wrapper

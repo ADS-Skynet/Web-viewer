@@ -22,20 +22,6 @@ class Streaming:
     JPEG_QUALITY = 75          # JPEG compression quality for WebSocket (0-100, lower = faster)
 
 
-class ROI:
-    """Region of Interest overlay configuration.
-
-    These values control the green trapezoid overlay shown on the viewer.
-    They should match the values used by the detection module.
-    """
-
-    BOTTOM_LEFT_X = 0.05       # Fraction of width (bottom-left corner)
-    TOP_LEFT_X = 0.35          # Fraction of width (top-left corner)
-    TOP_RIGHT_X = 0.65         # Fraction of width (top-right corner)
-    BOTTOM_RIGHT_X = 0.95      # Fraction of width (bottom-right corner)
-    TOP_Y = 0.5                # Fraction of height (look at top 50% of image)
-
-
 class Targets:
     """Target connection presets for simulation and vehicle."""
 
@@ -72,7 +58,6 @@ def get_target_config(target: str) -> Dict[str, Any]:
 __all__ = [
     'FPS',
     'Streaming',
-    'ROI',
     'Targets',
     'get_target_config',
 ]
