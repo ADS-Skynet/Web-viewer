@@ -426,7 +426,7 @@ class ZMQWebViewer:
 
             # Log timing breakdown if render is slow (>10ms)
             if total_render_time_ms > 10:
-                print(f"  [RENDER] Total: {total_render_time_ms:.1f}ms | Copy: {copy_time_ms:.1f}ms | Lanes: {lane_draw_time_ms:.1f}ms | HUD: {hud_draw_time_ms:.1f}ms | Store: {store_time_ms:.1f}ms")
+                print(f"  [LAGGING_RENDER_WARN!] Total: {total_render_time_ms:.1f}ms | Copy: {copy_time_ms:.1f}ms | Lanes: {lane_draw_time_ms:.1f}ms | HUD: {hud_draw_time_ms:.1f}ms | Store: {store_time_ms:.1f}ms")
 
         # Broadcast frame to WebSocket clients
         if self.verbose:
