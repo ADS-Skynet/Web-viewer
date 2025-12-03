@@ -135,6 +135,25 @@ class ZMQWebViewer:
             'roi_top_y': config.cv_detector.roi_top_y,
         }
 
+        # View mode for image visualization (normal, canny, hough)
+        self.view_mode = 'normal'  # Options: 'normal', 'canny', 'hough'
+        self.view_mode_lock = Lock()
+
+        # Display toggles (raw image background and HUD overlay)
+        self.show_raw_image = True  # Show raw image as background
+        self.show_hud = True  # Show HUD overlay
+        self.display_lock = Lock()
+
+        # Cache Canny/Hough parameters from config
+        self.canny_low = config.cv_detector.canny_low
+        self.canny_high = config.cv_detector.canny_high
+        self.hough_threshold = config.cv_detector.hough_threshold
+        self.hough_min_line_len = config.cv_detector.hough_min_line_len
+        self.hough_max_line_gap = config.cv_detector.hough_max_line_gap
+        self.hough_rho = config.cv_detector.hough_rho
+        self.hough_theta = config.cv_detector.hough_theta
+        self.smoothing_factor = config.cv_detector.smoothing_factor
+
         self.running = False
 
         print(f"\n{'='*60}")
@@ -220,6 +239,91 @@ class ZMQWebViewer:
         # DON'T render here - wait for next frame
         # This prevents duplicate rendering which was causing lag
 
+    def _process_canny_mode(self, image: np.ndarray) -> np.ndarray:
+        """
+        Process image for Canny edge visualization.
+
+        All processing happens on viewer side from raw image.
+
+        Args:
+            image: Raw RGB image from vehicle
+
+        Returns:
+            Canny edge visualization (white edges on black background)
+        """
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        # Apply Gaussian blur
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Apply Canny edge detection
+        edges = cv2.Canny(blur, self.canny_low, self.canny_high)
+
+        # Convert back to RGB for consistent display
+        edges_rgb = cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+
+        return edges_rgb
+
+    def _process_hough_mode(self, image: np.ndarray) -> np.ndarray:
+        """
+        Process image for Hough lines visualization.
+
+        Shows only Hough lines (magenta) on black background.
+        All processing happens on viewer side from raw image.
+
+        Args:
+            image: Raw RGB image from vehicle
+
+        Returns:
+            Hough lines visualization (magenta lines on black background)
+        """
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        # Apply Gaussian blur
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Apply Canny edge detection
+        edges = cv2.Canny(blur, self.canny_low, self.canny_high)
+
+        # Apply ROI mask to edges (same as detection uses)
+        height, width = edges.shape
+        mask = np.zeros_like(edges)
+
+        # Use cached ROI config
+        vertices = np.array([[
+            [int(width * self.roi_config['roi_bottom_left_x']), height],
+            [int(width * self.roi_config['roi_top_left_x']), int(height * self.roi_config['roi_top_y'])],
+            [int(width * self.roi_config['roi_top_right_x']), int(height * self.roi_config['roi_top_y'])],
+            [int(width * self.roi_config['roi_bottom_right_x']), height]
+        ]], dtype=np.int32)
+
+        cv2.fillPoly(mask, vertices, 255)
+        masked_edges = cv2.bitwise_and(edges, mask)
+
+        # Apply Hough transform
+        lines = cv2.HoughLinesP(
+            masked_edges,
+            self.hough_rho,
+            self.hough_theta,
+            self.hough_threshold,
+            minLineLength=self.hough_min_line_len,
+            maxLineGap=self.hough_max_line_gap
+        )
+
+        # Create black canvas
+        output = np.zeros_like(image)
+
+        # Draw Hough lines in magenta
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                # Magenta color in RGB: (255, 0, 255)
+                cv2.line(output, (x1, y1), (x2, y2), (255, 0, 255), 2)
+
+        return output
+
     def _calculate_lane_metrics(self, frame_width: int, frame_height: int) -> Dict[str, Any]:
         """
         Extract lane departure metrics from detection data received from LKAS.
@@ -271,13 +375,88 @@ class ZMQWebViewer:
         if self.latest_frame is None:
             return
 
-        # Start with original frame
-        if self.verbose:
-            copy_start = time.time()
-        output = self.latest_frame.copy()
-        if self.verbose:
-            copy_time_ms = (time.time() - copy_start) * 1000
+        # Get current display settings
+        with self.view_mode_lock:
+            current_mode = self.view_mode
+        with self.display_lock:
+            show_raw = self.show_raw_image
+            show_hud = self.show_hud
 
+        # Step 1: Start with raw image or black background
+        if show_raw:
+            output = self.latest_frame.copy()
+        else:
+            # Create black canvas with same dimensions
+            output = np.zeros_like(self.latest_frame)
+
+        # Step 2: Apply view mode processing (viewer-side only!)
+        if current_mode == 'canny':
+            # Canny edge visualization mode
+            canny_result = self._process_canny_mode(self.latest_frame)
+            if show_raw:
+                # Blend canny edges with raw image
+                output = cv2.addWeighted(output, 0.5, canny_result, 0.5, 0)
+            else:
+                # Show only canny edges on black
+                output = canny_result
+
+        elif current_mode == 'hough':
+            # Hough lines visualization mode
+            hough_result = self._process_hough_mode(self.latest_frame)
+            if show_raw:
+                # Overlay hough lines on raw image (lines are magenta on black, so we can just add)
+                mask = np.any(hough_result > 0, axis=2)
+                output[mask] = hough_result[mask]
+            else:
+                # Show only hough lines on black
+                output = hough_result
+
+        else:
+            # Normal mode - apply lane detection overlays (ROI, lanes)
+            # Only apply if we're showing raw image
+            if show_raw:
+                self._apply_normal_overlays(output)
+
+        # Step 3: Optionally add HUD on top of everything
+        if show_hud:
+            self._draw_hud_overlay(output)
+
+        # Store rendered frame
+        if self.verbose:
+            store_start = time.time()
+        with self.render_lock:
+            self.rendered_frame = output
+        if self.verbose:
+            store_time_ms = (time.time() - store_start) * 1000
+
+        # Calculate total render time (only measure if verbose)
+        if self.verbose:
+            total_render_time_ms = (time.time() - render_start) * 1000
+
+            # Log timing breakdown if render is slow (>10ms)
+            if total_render_time_ms > 10:
+                print(f"  [LAGGING_RENDER_WARN!] Total: {total_render_time_ms:.1f}ms | Mode: {current_mode} | Store: {store_time_ms:.1f}ms")
+
+        # Broadcast frame to WebSocket clients
+        if self.verbose:
+            ws_start = time.time()
+        self._broadcast_frame_ws()
+        if self.verbose:
+            ws_time_ms = (time.time() - ws_start) * 1000
+
+            # Log WebSocket timing if slow (>10ms)
+            if ws_time_ms > 10:
+                print(f"  [WEBSOCKET] Broadcast took {ws_time_ms:.1f}ms")
+
+    def _apply_normal_overlays(self, output: np.ndarray):
+        """
+        Apply normal mode overlays (ROI and lanes only, no HUD).
+
+        Modifies output in-place.
+
+        Args:
+            output: Image to apply overlays to
+        """
         # Draw ROI overlay (green trapezoid showing detection area)
         # Calculate ROI vertices (cached to avoid config loading on every frame)
         try:
@@ -304,12 +483,7 @@ class ZMQWebViewer:
             pass
 
         # Draw lane overlays if detection available
-        if self.verbose:
-            lane_draw_time_ms = 0
         if self.latest_detection:
-            if self.verbose:
-                lane_start = time.time()
-
             left_lane = None
             right_lane = None
 
@@ -321,18 +495,22 @@ class ZMQWebViewer:
                 rl = self.latest_detection.right_lane
                 right_lane = (int(rl['x1']), int(rl['y1']), int(rl['x2']), int(rl['y2']))
 
-            # Draw lanes
-            output = self.visualizer.draw_lanes(output, left_lane, right_lane, fill_lane=True)
-            if self.verbose:
-                lane_draw_time_ms = (time.time() - lane_start) * 1000
+            # Draw lanes (note: draw_lanes returns a new image)
+            modified = self.visualizer.draw_lanes(output, left_lane, right_lane, fill_lane=True)
+            # Copy result back to output array
+            np.copyto(output, modified)
 
+    def _draw_hud_overlay(self, output: np.ndarray):
+        """
+        Draw HUD overlay (vehicle state, metrics, performance info).
+
+        Modifies output in-place.
+
+        Args:
+            output: Image to draw HUD on
+        """
         # Draw vehicle state overlay if available
-        if self.verbose:
-            hud_draw_time_ms = 0
         if self.latest_state:
-            if self.verbose:
-                hud_start = time.time()
-
             vehicle_telemetry = {
                 'speed_kmh': self.latest_state.speed_kmh,
                 'throttle': self.latest_state.throttle,
@@ -344,16 +522,16 @@ class ZMQWebViewer:
             height, width = output.shape[:2]
             metrics = self._calculate_lane_metrics(width, height)
 
-            # Draw HUD with vehicle data
-            output = self.visualizer.draw_hud(
+            # Draw HUD with vehicle data (returns new image)
+            modified = self.visualizer.draw_hud(
                 output,
                 metrics,
                 show_steering=True,
                 steering_value=self.latest_state.steering,
                 vehicle_telemetry=vehicle_telemetry
             )
-            if self.verbose:
-                hud_draw_time_ms = (time.time() - hud_start) * 1000
+            # Copy result back to output array
+            np.copyto(output, modified)
 
         # Add performance overlay (bottom-left corner) - only in verbose mode
         if self.verbose and self.latest_frame_metadata:
@@ -411,33 +589,6 @@ class ZMQWebViewer:
                         (255, 255, 255),
                         1
                     )
-
-        # Store rendered frame
-        if self.verbose:
-            store_start = time.time()
-        with self.render_lock:
-            self.rendered_frame = output
-        if self.verbose:
-            store_time_ms = (time.time() - store_start) * 1000
-
-        # Calculate total render time (only measure if verbose)
-        if self.verbose:
-            total_render_time_ms = (time.time() - render_start) * 1000
-
-            # Log timing breakdown if render is slow (>10ms)
-            if total_render_time_ms > 10:
-                print(f"  [LAGGING_RENDER_WARN!] Total: {total_render_time_ms:.1f}ms | Copy: {copy_time_ms:.1f}ms | Lanes: {lane_draw_time_ms:.1f}ms | HUD: {hud_draw_time_ms:.1f}ms | Store: {store_time_ms:.1f}ms")
-
-        # Broadcast frame to WebSocket clients
-        if self.verbose:
-            ws_start = time.time()
-        self._broadcast_frame_ws()
-        if self.verbose:
-            ws_time_ms = (time.time() - ws_start) * 1000
-
-            # Log WebSocket timing if slow (>10ms)
-            if ws_time_ms > 10:
-                print(f"  [WEBSOCKET] Broadcast took {ws_time_ms:.1f}ms")
 
     def _zmq_poll_loop(self):
         """ZMQ polling loop (runs in separate thread)."""
@@ -621,6 +772,32 @@ class ZMQWebViewer:
                         self.parameter_publisher.send_parameter(category, parameter, value)
                         if self.verbose:
                             print(f"[WebSocket] Parameter from {client_addr}: {category}.{parameter} = {value}")
+
+                    elif msg_type == 'view_mode':
+                        # Handle view mode change (normal, canny, hough)
+                        mode = data.get('mode', 'normal')
+                        if mode in ['normal', 'canny', 'hough']:
+                            with self.view_mode_lock:
+                                self.view_mode = mode
+                            if self.verbose:
+                                print(f"[WebSocket] View mode changed to: {mode}")
+                        else:
+                            print(f"[WebSocket] Invalid view mode: {mode}")
+
+                    elif msg_type == 'toggle':
+                        # Handle display toggle (raw_image, hud)
+                        setting = data.get('setting')
+                        enabled = data.get('enabled', True)
+
+                        with self.display_lock:
+                            if setting == 'raw_image':
+                                self.show_raw_image = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] Raw image: {'ON' if enabled else 'OFF'}")
+                            elif setting == 'hud':
+                                self.show_hud = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] HUD: {'ON' if enabled else 'OFF'}")
 
                 except json.JSONDecodeError:
                     print(f"[WebSocket] Invalid JSON from {client_addr}")
@@ -870,11 +1047,20 @@ class ZMQWebViewer:
                     vehicle_url=viewer_self.vehicle_url,
                     target=viewer_self.target.upper(),
                     respawn_display=respawn_display,
+                    # ROI parameters
                     roi_bottom_left_x=viewer_self.roi_config['roi_bottom_left_x'],
                     roi_top_left_x=viewer_self.roi_config['roi_top_left_x'],
                     roi_top_right_x=viewer_self.roi_config['roi_top_right_x'],
                     roi_bottom_right_x=viewer_self.roi_config['roi_bottom_right_x'],
-                    roi_top_y=viewer_self.roi_config['roi_top_y']
+                    roi_top_y=viewer_self.roi_config['roi_top_y'],
+                    # CV detection parameters
+                    canny_low=viewer_self.canny_low,
+                    canny_high=viewer_self.canny_high,
+                    hough_threshold=viewer_self.hough_threshold,
+                    hough_min_line_len=viewer_self.hough_min_line_len,
+                    smoothing_factor=viewer_self.smoothing_factor,
+                    # Throttle policy
+                    throttle_base=ConfigManager.load().throttle_policy.base
                 )
 
         # Start HTTP server with error handling wrapper

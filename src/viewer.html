@@ -71,6 +71,73 @@
         .btn.warning:hover {{
             background: #F57C00;
         }}
+        .btn.success {{
+            background: #4CAF50;
+        }}
+        .btn.success:hover {{
+            background: #45a049;
+        }}
+        .mode-controls {{
+            margin-top: 20px;
+            padding: 15px;
+            background: #2d2d2d;
+            border-radius: 8px;
+        }}
+        .mode-controls h3 {{
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            color: #2196F3;
+        }}
+        .mode-buttons {{
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+        .mode-btn {{
+            padding: 10px 20px;
+            background: #4a4a4a;
+            border: 2px solid #4a4a4a;
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }}
+        .mode-btn:hover {{
+            background: #5a5a5a;
+            border-color: #5a5a5a;
+        }}
+        .mode-btn.active {{
+            background: #4CAF50;
+            border-color: #4CAF50;
+        }}
+        .toggle-controls {{
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #4a4a4a;
+        }}
+        .toggle-buttons {{
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+        .toggle-btn {{
+            padding: 8px 16px;
+            background: #4CAF50;
+            border: 2px solid #4CAF50;
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }}
+        .toggle-btn:hover {{
+            opacity: 0.8;
+        }}
+        .toggle-btn.off {{
+            background: #666;
+            border-color: #666;
+        }}
         .info {{
             margin-top: 20px;
             padding: 15px;
@@ -155,6 +222,20 @@
             <button class="btn warning" id="pauseBtn" onclick="togglePause()">🛑 Stop</button>
             <button class="btn" id="resetBtn" onclick="resetSystem()">🔄 Reset System</button>
         </div>
+        <div class="mode-controls">
+            <h3>🎨 Visualization Mode</h3>
+            <div class="mode-buttons">
+                <button class="mode-btn active" id="normalModeBtn" onclick="setViewMode('normal')">Normal</button>
+                <button class="mode-btn" id="cannyModeBtn" onclick="setViewMode('canny')">Canny Edges</button>
+                <button class="mode-btn" id="houghModeBtn" onclick="setViewMode('hough')">Hough Lines</button>
+            </div>
+            <div class="toggle-controls">
+                <div class="toggle-buttons">
+                    <button class="toggle-btn" id="rawImageToggle" onclick="toggleRawImage()">📷 Raw Image: ON</button>
+                    <button class="toggle-btn" id="hudToggle" onclick="toggleHUD()">📊 HUD: ON</button>
+                </div>
+            </div>
+        </div>
         <div class="info">
             <div class="info-item">
                 <strong>Target:</strong> {target} | <strong>Mode:</strong> WebSocket Real-Time Streaming
@@ -181,33 +262,33 @@
                 <h3>🔍 Detection Parameters</h3>
                 <div class="param-control">
                     <label>Canny Low Threshold</label>
-                    <input type="range" id="canny_low" min="1" max="150" value="50" step="1"
+                    <input type="range" id="canny_low" min="1" max="150" value="{canny_low}" step="1"
                            oninput="updateParam('detection', 'canny_low', this.value)">
-                    <span class="param-value" id="canny_low_val">50</span>
+                    <span class="param-value" id="canny_low_val">{canny_low}</span>
                 </div>
                 <div class="param-control">
                     <label>Canny High Threshold</label>
-                    <input type="range" id="canny_high" min="50" max="255" value="150" step="1"
+                    <input type="range" id="canny_high" min="50" max="255" value="{canny_high}" step="1"
                            oninput="updateParam('detection', 'canny_high', this.value)">
-                    <span class="param-value" id="canny_high_val">150</span>
+                    <span class="param-value" id="canny_high_val">{canny_high}</span>
                 </div>
                 <div class="param-control">
                     <label>Hough Threshold</label>
-                    <input type="range" id="hough_threshold" min="1" max="150" value="50" step="1"
+                    <input type="range" id="hough_threshold" min="1" max="150" value="{hough_threshold}" step="1"
                            oninput="updateParam('detection', 'hough_threshold', this.value)">
-                    <span class="param-value" id="hough_threshold_val">50</span>
+                    <span class="param-value" id="hough_threshold_val">{hough_threshold}</span>
                 </div>
                 <div class="param-control">
                     <label>Hough Min Line Length</label>
-                    <input type="range" id="hough_min_line_len" min="10" max="150" value="40" step="5"
+                    <input type="range" id="hough_min_line_len" min="10" max="150" value="{hough_min_line_len}" step="5"
                            oninput="updateParam('detection', 'hough_min_line_len', this.value)">
-                    <span class="param-value" id="hough_min_line_len_val">40</span>
+                    <span class="param-value" id="hough_min_line_len_val">{hough_min_line_len}</span>
                 </div>
                 <div class="param-control">
                     <label>Smoothing Factor</label>
-                    <input type="range" id="smoothing_factor" min="0" max="1" value="0.7" step="0.05"
+                    <input type="range" id="smoothing_factor" min="0" max="1" value="{smoothing_factor}" step="0.05"
                            oninput="updateParam('detection', 'smoothing_factor', this.value)">
-                    <span class="param-value" id="smoothing_factor_val">0.70</span>
+                    <span class="param-value" id="smoothing_factor_val">{smoothing_factor:.2f}</span>
                 </div>
             </div>
 
@@ -233,9 +314,9 @@
                 </div>
                 <div class="param-control">
                     <label>Base Throttle</label>
-                    <input type="range" id="throttle_base" min="0" max="0.5" value="0.14" step="0.01"
+                    <input type="range" id="throttle_base" min="0" max="0.5" value="{throttle_base}" step="0.01"
                            oninput="updateParam('decision', 'throttle_base', this.value)">
-                    <span class="param-value" id="throttle_base_val">0.14</span>
+                    <span class="param-value" id="throttle_base_val">{throttle_base:.2f}</span>
                 </div>
                 <div class="param-control">
                     <label>Min Throttle</label>
@@ -541,6 +622,70 @@
             }});
 
             showNotification('System reset: Vehicle paused, steering zeroed, all state cleared');
+        }}
+
+        function setViewMode(mode) {{
+            // Update button states
+            document.querySelectorAll('.mode-btn').forEach(btn => {{
+                btn.classList.remove('active');
+            }});
+            document.getElementById(mode + 'ModeBtn').classList.add('active');
+
+            // Send mode change to viewer
+            sendWebSocketMessage({{
+                type: 'view_mode',
+                mode: mode
+            }});
+
+            showNotification('View mode: ' + mode.toUpperCase());
+        }}
+
+        // Toggle states (default: both ON)
+        let rawImageEnabled = true;
+        let hudEnabled = true;
+
+        function toggleRawImage() {{
+            rawImageEnabled = !rawImageEnabled;
+            const btn = document.getElementById('rawImageToggle');
+
+            if (rawImageEnabled) {{
+                btn.textContent = '📷 Raw Image: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '📷 Raw Image: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'raw_image',
+                enabled: rawImageEnabled
+            }});
+
+            showNotification('Raw Image: ' + (rawImageEnabled ? 'ON' : 'OFF'));
+        }}
+
+        function toggleHUD() {{
+            hudEnabled = !hudEnabled;
+            const btn = document.getElementById('hudToggle');
+
+            if (hudEnabled) {{
+                btn.textContent = '📊 HUD: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '📊 HUD: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'hud',
+                enabled: hudEnabled
+            }});
+
+            showNotification('HUD: ' + (hudEnabled ? 'ON' : 'OFF'));
         }}
 
         function showNotification(message, isError = false) {{
