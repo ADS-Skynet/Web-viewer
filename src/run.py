@@ -135,12 +135,11 @@ class ZMQWebViewer:
             'roi_top_y': config.cv_detector.roi_top_y,
         }
 
-        # View mode for image visualization (normal, canny, hough)
-        self.view_mode = 'normal'  # Options: 'normal', 'canny', 'hough'
-        self.view_mode_lock = Lock()
-
-        # Display toggles (raw image background and HUD overlay)
+        # Visualization layer toggles (all independent)
         self.show_raw_image = True  # Show raw image as background
+        self.show_lanes = True  # Show lane detection (ROI + lanes)
+        self.show_canny = False  # Show Canny edges
+        self.show_hough = False  # Show Hough lines
         self.show_hud = True  # Show HUD overlay
         self.display_lock = Lock()
 
@@ -376,10 +375,11 @@ class ZMQWebViewer:
             return
 
         # Get current display settings
-        with self.view_mode_lock:
-            current_mode = self.view_mode
         with self.display_lock:
             show_raw = self.show_raw_image
+            show_lanes = self.show_lanes
+            show_canny = self.show_canny
+            show_hough = self.show_hough
             show_hud = self.show_hud
 
         # Step 1: Start with raw image or black background
@@ -389,35 +389,25 @@ class ZMQWebViewer:
             # Create black canvas with same dimensions
             output = np.zeros_like(self.latest_frame)
 
-        # Step 2: Apply view mode processing (viewer-side only!)
-        if current_mode == 'canny':
-            # Canny edge visualization mode
+        # Step 2: Overlay Canny edges (if enabled)
+        if show_canny:
             canny_result = self._process_canny_mode(self.latest_frame)
-            if show_raw:
-                # Blend canny edges with raw image
-                output = cv2.addWeighted(output, 0.5, canny_result, 0.5, 0)
-            else:
-                # Show only canny edges on black
-                output = canny_result
+            # Blend canny edges with current output (60/40)
+            output = cv2.addWeighted(output, 0.6, canny_result, 0.4, 0)
 
-        elif current_mode == 'hough':
-            # Hough lines visualization mode
+        # Step 3: Overlay Hough lines (if enabled)
+        if show_hough:
             hough_result = self._process_hough_mode(self.latest_frame)
-            if show_raw:
-                # Overlay hough lines on raw image (lines are magenta on black, so we can just add)
-                mask = np.any(hough_result > 0, axis=2)
-                output[mask] = hough_result[mask]
-            else:
-                # Show only hough lines on black
-                output = hough_result
+            # Overlay hough lines (magenta lines on black, so we can just add where lines exist)
+            mask = np.any(hough_result > 0, axis=2)
+            output[mask] = hough_result[mask]
 
-        else:
-            # Normal mode - apply lane detection overlays (ROI, lanes)
-            # Only apply if we're showing raw image
-            if show_raw:
-                self._apply_normal_overlays(output)
+        # Step 4: Apply lane detection overlays (ROI + detected lanes)
+        # This draws on top so actual detection is visible over Canny/Hough
+        if show_lanes:
+            self._apply_normal_overlays(output)
 
-        # Step 3: Optionally add HUD on top of everything
+        # Step 5: Add HUD on top of everything (if enabled)
         if show_hud:
             self._draw_hud_overlay(output)
 
@@ -435,7 +425,13 @@ class ZMQWebViewer:
 
             # Log timing breakdown if render is slow (>10ms)
             if total_render_time_ms > 10:
-                print(f"  [LAGGING_RENDER_WARN!] Total: {total_render_time_ms:.1f}ms | Mode: {current_mode} | Store: {store_time_ms:.1f}ms")
+                layers = []
+                if show_raw: layers.append("raw")
+                if show_lanes: layers.append("lanes")
+                if show_canny: layers.append("canny")
+                if show_hough: layers.append("hough")
+                if show_hud: layers.append("hud")
+                print(f"  [LAGGING_RENDER_WARN!] Total: {total_render_time_ms:.1f}ms | Layers: {'+'.join(layers)} | Store: {store_time_ms:.1f}ms")
 
         # Broadcast frame to WebSocket clients
         if self.verbose:
@@ -769,23 +765,31 @@ class ZMQWebViewer:
                             if self.verbose:
                                 print(f"[ROI] Updated local ROI config: {parameter} = {value}")
 
+                        # Update local CV detection parameters (used for viewer's own Canny/Hough rendering)
+                        if parameter == 'canny_low':
+                            self.canny_low = int(value)
+                        elif parameter == 'canny_high':
+                            self.canny_high = int(value)
+                        elif parameter == 'hough_threshold':
+                            self.hough_threshold = int(value)
+                        elif parameter == 'hough_min_line_len':
+                            self.hough_min_line_len = int(value)
+                        elif parameter == 'hough_max_line_gap':
+                            self.hough_max_line_gap = int(value)
+                        elif parameter == 'smoothing_factor':
+                            self.smoothing_factor = float(value)
+
+                        if self.verbose and parameter in ['canny_low', 'canny_high', 'hough_threshold',
+                                                           'hough_min_line_len', 'hough_max_line_gap',
+                                                           'smoothing_factor']:
+                            print(f"[CV] Updated local viewer rendering: {parameter} = {value}")
+
                         self.parameter_publisher.send_parameter(category, parameter, value)
                         if self.verbose:
                             print(f"[WebSocket] Parameter from {client_addr}: {category}.{parameter} = {value}")
 
-                    elif msg_type == 'view_mode':
-                        # Handle view mode change (normal, canny, hough)
-                        mode = data.get('mode', 'normal')
-                        if mode in ['normal', 'canny', 'hough']:
-                            with self.view_mode_lock:
-                                self.view_mode = mode
-                            if self.verbose:
-                                print(f"[WebSocket] View mode changed to: {mode}")
-                        else:
-                            print(f"[WebSocket] Invalid view mode: {mode}")
-
                     elif msg_type == 'toggle':
-                        # Handle display toggle (raw_image, hud)
+                        # Handle visualization layer toggle (raw_image, lanes, canny, hough, hud)
                         setting = data.get('setting')
                         enabled = data.get('enabled', True)
 
@@ -794,6 +798,18 @@ class ZMQWebViewer:
                                 self.show_raw_image = enabled
                                 if self.verbose:
                                     print(f"[WebSocket] Raw image: {'ON' if enabled else 'OFF'}")
+                            elif setting == 'lanes':
+                                self.show_lanes = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] Lanes: {'ON' if enabled else 'OFF'}")
+                            elif setting == 'canny':
+                                self.show_canny = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] Canny: {'ON' if enabled else 'OFF'}")
+                            elif setting == 'hough':
+                                self.show_hough = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] Hough: {'ON' if enabled else 'OFF'}")
                             elif setting == 'hud':
                                 self.show_hud = enabled
                                 if self.verbose:
@@ -937,6 +953,25 @@ class ZMQWebViewer:
                             if viewer_self.verbose:
                                 print(f"[ROI] Updated local ROI config: {parameter} = {value}")
 
+                        # Update local CV detection parameters (used for viewer's own Canny/Hough rendering)
+                        if parameter == 'canny_low':
+                            viewer_self.canny_low = int(value)
+                        elif parameter == 'canny_high':
+                            viewer_self.canny_high = int(value)
+                        elif parameter == 'hough_threshold':
+                            viewer_self.hough_threshold = int(value)
+                        elif parameter == 'hough_min_line_len':
+                            viewer_self.hough_min_line_len = int(value)
+                        elif parameter == 'hough_max_line_gap':
+                            viewer_self.hough_max_line_gap = int(value)
+                        elif parameter == 'smoothing_factor':
+                            viewer_self.smoothing_factor = float(value)
+
+                        if viewer_self.verbose and parameter in ['canny_low', 'canny_high', 'hough_threshold',
+                                                                  'hough_min_line_len', 'hough_max_line_gap',
+                                                                  'smoothing_factor']:
+                            print(f"[CV] Updated local viewer rendering: {parameter} = {value}")
+
                         # Send parameter update via ZMQ
                         viewer_self.parameter_publisher.send_parameter(category, parameter, value)
 
@@ -1058,6 +1093,7 @@ class ZMQWebViewer:
                     canny_high=viewer_self.canny_high,
                     hough_threshold=viewer_self.hough_threshold,
                     hough_min_line_len=viewer_self.hough_min_line_len,
+                    hough_max_line_gap=viewer_self.hough_max_line_gap,
                     smoothing_factor=viewer_self.smoothing_factor,
                     # Throttle policy
                     throttle_base=ConfigManager.load().throttle_policy.base

@@ -223,17 +223,13 @@
             <button class="btn" id="resetBtn" onclick="resetSystem()">🔄 Reset System</button>
         </div>
         <div class="mode-controls">
-            <h3>🎨 Visualization Mode</h3>
-            <div class="mode-buttons">
-                <button class="mode-btn active" id="normalModeBtn" onclick="setViewMode('normal')">Normal</button>
-                <button class="mode-btn" id="cannyModeBtn" onclick="setViewMode('canny')">Canny Edges</button>
-                <button class="mode-btn" id="houghModeBtn" onclick="setViewMode('hough')">Hough Lines</button>
-            </div>
-            <div class="toggle-controls">
-                <div class="toggle-buttons">
-                    <button class="toggle-btn" id="rawImageToggle" onclick="toggleRawImage()">📷 Raw Image: ON</button>
-                    <button class="toggle-btn" id="hudToggle" onclick="toggleHUD()">📊 HUD: ON</button>
-                </div>
+            <h3>🎨 Visualization Layers</h3>
+            <div class="toggle-buttons">
+                <button class="toggle-btn" id="rawImageToggle" onclick="toggleRawImage()">📷 Raw Image: ON</button>
+                <button class="toggle-btn" id="lanesToggle" onclick="toggleLanes()">🛣️ Lanes: ON</button>
+                <button class="toggle-btn off" id="cannyToggle" onclick="toggleCanny()">⚪ Canny: OFF</button>
+                <button class="toggle-btn off" id="houghToggle" onclick="toggleHough()">🔴 Hough: OFF</button>
+                <button class="toggle-btn" id="hudToggle" onclick="toggleHUD()">📊 HUD: ON</button>
             </div>
         </div>
         <div class="info">
@@ -283,6 +279,12 @@
                     <input type="range" id="hough_min_line_len" min="10" max="150" value="{hough_min_line_len}" step="5"
                            oninput="updateParam('detection', 'hough_min_line_len', this.value)">
                     <span class="param-value" id="hough_min_line_len_val">{hough_min_line_len}</span>
+                </div>
+                <div class="param-control">
+                    <label>Hough Max Line Gap</label>
+                    <input type="range" id="hough_max_line_gap" min="10" max="300" value="{hough_max_line_gap}" step="10"
+                           oninput="updateParam('detection', 'hough_max_line_gap', this.value)">
+                    <span class="param-value" id="hough_max_line_gap_val">{hough_max_line_gap}</span>
                 </div>
                 <div class="param-control">
                     <label>Smoothing Factor</label>
@@ -336,9 +338,9 @@
                 <h3>🚗 Vehicle Control</h3>
                 <div class="param-control">
                     <label>Throttle</label>
-                    <input type="range" id="throttle" min="0" max="0.5" value="0.15" step="0.01"
+                    <input type="range" id="throttle" min="0" max="0.5" value="{throttle_base}" step="0.01"
                            oninput="updateParam('vehicle', 'throttle', this.value)">
-                    <span class="param-value" id="throttle_val">0.15</span>
+                    <span class="param-value" id="throttle_val">{throttle_base:.2f}</span>
                 </div>
             </div>
         </div>
@@ -624,24 +626,11 @@
             showNotification('System reset: Vehicle paused, steering zeroed, all state cleared');
         }}
 
-        function setViewMode(mode) {{
-            // Update button states
-            document.querySelectorAll('.mode-btn').forEach(btn => {{
-                btn.classList.remove('active');
-            }});
-            document.getElementById(mode + 'ModeBtn').classList.add('active');
-
-            // Send mode change to viewer
-            sendWebSocketMessage({{
-                type: 'view_mode',
-                mode: mode
-            }});
-
-            showNotification('View mode: ' + mode.toUpperCase());
-        }}
-
-        // Toggle states (default: both ON)
+        // Toggle states (default: raw image, lanes, and HUD ON; canny and hough OFF)
         let rawImageEnabled = true;
+        let lanesEnabled = true;
+        let cannyEnabled = false;
+        let houghEnabled = false;
         let hudEnabled = true;
 
         function toggleRawImage() {{
@@ -664,6 +653,72 @@
             }});
 
             showNotification('Raw Image: ' + (rawImageEnabled ? 'ON' : 'OFF'));
+        }}
+
+        function toggleLanes() {{
+            lanesEnabled = !lanesEnabled;
+            const btn = document.getElementById('lanesToggle');
+
+            if (lanesEnabled) {{
+                btn.textContent = '🛣️ Lanes: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '🛣️ Lanes: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'lanes',
+                enabled: lanesEnabled
+            }});
+
+            showNotification('Lanes: ' + (lanesEnabled ? 'ON' : 'OFF'));
+        }}
+
+        function toggleCanny() {{
+            cannyEnabled = !cannyEnabled;
+            const btn = document.getElementById('cannyToggle');
+
+            if (cannyEnabled) {{
+                btn.textContent = '⚪ Canny: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '⚪ Canny: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'canny',
+                enabled: cannyEnabled
+            }});
+
+            showNotification('Canny: ' + (cannyEnabled ? 'ON' : 'OFF'));
+        }}
+
+        function toggleHough() {{
+            houghEnabled = !houghEnabled;
+            const btn = document.getElementById('houghToggle');
+
+            if (houghEnabled) {{
+                btn.textContent = '🔴 Hough: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '🔴 Hough: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'hough',
+                enabled: houghEnabled
+            }});
+
+            showNotification('Hough: ' + (houghEnabled ? 'ON' : 'OFF'));
         }}
 
         function toggleHUD() {{
