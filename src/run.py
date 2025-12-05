@@ -17,7 +17,6 @@ import time
 import json
 import asyncio
 import websockets
-import yaml
 from pathlib import Path
 from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread, Lock
@@ -35,6 +34,9 @@ from skynet_common.communication import (
 from skynet_common.visualization import LKASVisualizer
 from skynet_common.types import LaneDepartureStatus
 from skynet_common.config import ConfigManager
+
+# Import module-specific constants
+from viewer.constants import FPS, Streaming, get_target_config
 
 
 class ZMQWebViewer:
@@ -73,9 +75,6 @@ class ZMQWebViewer:
         self.lkas_mode = lkas_mode
         self.target = target
 
-        # Load configuration
-        self.config = self._load_config()
-
         # ZMQ communication
         self.subscriber = ViewerSubscriber(vehicle_url)
         self.action_publisher = ActionPublisher(action_url)
@@ -89,6 +88,7 @@ class ZMQWebViewer:
 
         # Latest data from vehicle
         self.latest_frame: Optional[np.ndarray] = None
+        self.latest_frame_metadata: Dict[str, Any] = {}  # Store metadata for latency display
         self.latest_detection: Optional[DetectionData] = None
         self.latest_state: Optional[VehicleState] = None
         self.latest_metrics: Dict[str, Any] = {}
@@ -112,20 +112,46 @@ class ZMQWebViewer:
         self.ws_loop = None  # Will be set when WebSocket server starts
         self.ws_ready = False  # Flag to indicate WebSocket is ready
 
-        # Frame rate limiting for WebSocket (from config)
-        fps_config = self.config.get('fps', {})
+        # Frame rate limiting for WebSocket (from constants)
         self.last_ws_frame_time = 0
-        self.ws_frame_interval = 1.0 / fps_config.get('websocket_max', 80)
-        self.status_broadcast_interval = 1.0 / fps_config.get('status_broadcast', 2)
-        self.zmq_poll_interval = 1.0 / fps_config.get('zmq_poll', 1000)
+        self.ws_frame_interval = 1.0 / FPS.WEBSOCKET_MAX
+        self.status_broadcast_interval = 1.0 / FPS.STATUS_BROADCAST
+        self.zmq_poll_interval = 1.0 / FPS.ZMQ_POLL
 
-        # Streaming quality (from config)
-        streaming_config = self.config.get('streaming', {})
-        self.jpeg_quality = streaming_config.get('jpeg_quality', 80)
+        # Streaming quality (from constants)
+        self.jpeg_quality = Streaming.JPEG_QUALITY
 
-        # ROI overlay cache (to avoid loading config on every frame)
-        # self.roi_vertices_cache: Optional[np.ndarray] = None
-        # self.roi_cache_frame_size: Optional[tuple] = None
+        # ROI overlay cache (to avoid recomputing on every frame)
+        self.roi_vertices_cache: Optional[np.ndarray] = None
+        self.roi_cache_frame_size: Optional[tuple] = None
+
+        # Load ROI config parameters once during initialization from common config
+        config = ConfigManager.load()
+        self.roi_config = {
+            'roi_bottom_left_x': config.cv_detector.roi_bottom_left_x,
+            'roi_top_left_x': config.cv_detector.roi_top_left_x,
+            'roi_top_right_x': config.cv_detector.roi_top_right_x,
+            'roi_bottom_right_x': config.cv_detector.roi_bottom_right_x,
+            'roi_top_y': config.cv_detector.roi_top_y,
+        }
+
+        # Visualization layer toggles (all independent)
+        self.show_raw_image = True  # Show raw image as background
+        self.show_lanes = True  # Show lane detection (ROI + lanes)
+        self.show_canny = False  # Show Canny edges
+        self.show_hough = False  # Show Hough lines
+        self.show_hud = True  # Show HUD overlay
+        self.display_lock = Lock()
+
+        # Cache Canny/Hough parameters from config
+        self.canny_low = config.cv_detector.canny_low
+        self.canny_high = config.cv_detector.canny_high
+        self.hough_threshold = config.cv_detector.hough_threshold
+        self.hough_min_line_len = config.cv_detector.hough_min_line_len
+        self.hough_max_line_gap = config.cv_detector.hough_max_line_gap
+        self.hough_rho = config.cv_detector.hough_rho
+        self.hough_theta = config.cv_detector.hough_theta
+        self.smoothing_factor = config.cv_detector.smoothing_factor
 
         self.running = False
 
@@ -139,14 +165,6 @@ class ZMQWebViewer:
         print(f"  Web interface: http://localhost:{web_port}")
         print(f"  WebSocket server: ws://localhost:{self.ws_port}")
         print(f"{'='*60}\n")
-
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from config.yaml file."""
-        config_path = Path(__file__).parent.parent / 'config.yaml'
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                return yaml.safe_load(f) or {}
-        return {}
 
     def start(self):
         """Start viewer (ZMQ polling + HTTP server + WebSocket server)."""
@@ -188,22 +206,28 @@ class ZMQWebViewer:
     def _on_frame_received(self, image: np.ndarray, metadata: Dict):
         """Called when new frame received from vehicle."""
         self.latest_frame = image
+        self.latest_frame_metadata = metadata  # Store for latency calculation
 
         # Mark stream as active when receiving frames (not just state)
         if not self.subscriber.state_received:
             self.subscriber.state_received = True
 
-        # print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} at {metadata.get('timestamp', 'N/A')}")
+        # Calculate latency for logging (only if verbose)
+        if self.verbose:
+            frame_timestamp = metadata.get('timestamp', 0)
+            current_time = time.time()
+            latency_ms = (current_time - frame_timestamp) * 1000 if frame_timestamp > 0 else 0
+            print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} | Latency: {latency_ms:.1f}ms | Decode: {metadata.get('decode_time_ms', 0):.1f}ms")
 
-        # Render frame with overlays (on laptop, not vehicle!)
+        # Render frame with overlays ONLY when frame arrives (not on detection/state updates)
+        # This prevents triple rendering which was causing 30-39ms per frame!
         self._render_frame()
 
     def _on_detection_received(self, detection: DetectionData):
         """Called when detection results received."""
         self.latest_detection = detection
-
-        # print(f"[Detection] Received detection with processing time {detection.processing_time_ms:.1f}ms")
-        self._render_frame()
+        # DON'T render here - wait for next frame
+        # This prevents duplicate rendering which was causing lag
 
     def _on_state_received(self, state: VehicleState):
         """Called when vehicle state received."""
@@ -211,7 +235,132 @@ class ZMQWebViewer:
         # Debug: Log when state is received (especially paused status)
         if state.paused is not None and self.verbose:
             print(f"[State] Received: paused={state.paused}, steering={state.steering:.3f}")
-        self._render_frame()
+        # DON'T render here - wait for next frame
+        # This prevents duplicate rendering which was causing lag
+
+    def _process_canny_mode(self, image: np.ndarray) -> np.ndarray:
+        """
+        Process image for Canny edge visualization.
+
+        All processing happens on viewer side from raw image.
+
+        Args:
+            image: Raw RGB image from vehicle
+
+        Returns:
+            Canny edge visualization (white edges on black background)
+        """
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        # Apply Gaussian blur
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Apply Canny edge detection
+        edges = cv2.Canny(blur, self.canny_low, self.canny_high)
+
+        # Convert back to RGB for consistent display
+        edges_rgb = cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+
+        return edges_rgb
+
+    def _process_hough_mode(self, image: np.ndarray) -> np.ndarray:
+        """
+        Process image for Hough lines visualization.
+
+        Shows only Hough lines (magenta) on black background.
+        All processing happens on viewer side from raw image.
+
+        Args:
+            image: Raw RGB image from vehicle
+
+        Returns:
+            Hough lines visualization (magenta lines on black background)
+        """
+        # Convert to grayscale
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        # Apply Gaussian blur
+        blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+        # Apply Canny edge detection
+        edges = cv2.Canny(blur, self.canny_low, self.canny_high)
+
+        # Apply ROI mask to edges (same as detection uses)
+        height, width = edges.shape
+        mask = np.zeros_like(edges)
+
+        # Use cached ROI config
+        vertices = np.array([[
+            [int(width * self.roi_config['roi_bottom_left_x']), height],
+            [int(width * self.roi_config['roi_top_left_x']), int(height * self.roi_config['roi_top_y'])],
+            [int(width * self.roi_config['roi_top_right_x']), int(height * self.roi_config['roi_top_y'])],
+            [int(width * self.roi_config['roi_bottom_right_x']), height]
+        ]], dtype=np.int32)
+
+        cv2.fillPoly(mask, vertices, 255)
+        masked_edges = cv2.bitwise_and(edges, mask)
+
+        # Apply Hough transform
+        lines = cv2.HoughLinesP(
+            masked_edges,
+            self.hough_rho,
+            self.hough_theta,
+            self.hough_threshold,
+            minLineLength=self.hough_min_line_len,
+            maxLineGap=self.hough_max_line_gap
+        )
+
+        # Create black canvas
+        output = np.zeros_like(image)
+
+        # Draw Hough lines in magenta
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                # Magenta color in RGB: (255, 0, 255)
+                cv2.line(output, (x1, y1), (x2, y2), (255, 0, 255), 2)
+
+        return output
+
+    def _calculate_lane_metrics(self, frame_width: int, frame_height: int) -> Dict[str, Any]:
+        """
+        Extract lane departure metrics from detection data received from LKAS.
+
+        Metrics are calculated in LKAS and sent via ZMQ, ensuring single source of truth.
+
+        Args:
+            frame_width: Frame width in pixels (unused, kept for compatibility)
+            frame_height: Frame height in pixels (unused, kept for compatibility)
+
+        Returns:
+            Dictionary with metrics compatible with visualizer
+        """
+        # Default metrics if no detection data available
+        if not self.latest_detection:
+            return {
+                'departure_status': LaneDepartureStatus.NO_LANES,
+                'lateral_offset_meters': None,
+                'heading_angle_deg': None,
+                'lane_width_pixels': None
+            }
+
+        # Extract metrics from detection data (calculated by LKAS)
+        departure_status = LaneDepartureStatus.NO_LANES
+        if self.latest_detection.departure_status:
+            # Convert string back to enum
+            try:
+                departure_status = LaneDepartureStatus(self.latest_detection.departure_status)
+            except ValueError:
+                # If invalid status string, default to NO_LANES
+                departure_status = LaneDepartureStatus.NO_LANES
+
+        return {
+            'departure_status': departure_status,
+            'lateral_offset_meters': self.latest_detection.lateral_offset_meters,
+            'heading_angle_deg': self.latest_detection.heading_angle_deg,
+            'lane_width_pixels': self.latest_detection.lane_width_pixels
+        }
 
     def _render_frame(self):
         """
@@ -220,39 +369,114 @@ class ZMQWebViewer:
         THIS RUNS ON LAPTOP, NOT VEHICLE!
         Heavy drawing operations don't impact vehicle performance.
         """
+        render_start = time.time()  # MEASURE TOTAL RENDER TIME
+
         if self.latest_frame is None:
             return
 
-        # Start with original frame
-        output = self.latest_frame.copy()
+        # Get current display settings
+        with self.display_lock:
+            show_raw = self.show_raw_image
+            show_lanes = self.show_lanes
+            show_canny = self.show_canny
+            show_hough = self.show_hough
+            show_hud = self.show_hud
 
+        # Step 1: Start with raw image or black background
+        if show_raw:
+            output = self.latest_frame.copy()
+        else:
+            # Create black canvas with same dimensions
+            output = np.zeros_like(self.latest_frame)
+
+        # Step 2: Overlay Canny edges (if enabled)
+        if show_canny:
+            canny_result = self._process_canny_mode(self.latest_frame)
+            # Blend canny edges with current output (60/40)
+            output = cv2.addWeighted(output, 0.6, canny_result, 0.4, 0)
+
+        # Step 3: Overlay Hough lines (if enabled)
+        if show_hough:
+            hough_result = self._process_hough_mode(self.latest_frame)
+            # Overlay hough lines (magenta lines on black, so we can just add where lines exist)
+            mask = np.any(hough_result > 0, axis=2)
+            output[mask] = hough_result[mask]
+
+        # Step 4: Apply lane detection overlays (ROI + detected lanes)
+        # This draws on top so actual detection is visible over Canny/Hough
+        if show_lanes:
+            self._apply_normal_overlays(output)
+
+        # Step 5: Add HUD on top of everything (if enabled)
+        if show_hud:
+            self._draw_hud_overlay(output)
+
+        # Store rendered frame
+        if self.verbose:
+            store_start = time.time()
+        with self.render_lock:
+            self.rendered_frame = output
+        if self.verbose:
+            store_time_ms = (time.time() - store_start) * 1000
+
+        # Calculate total render time (only measure if verbose)
+        if self.verbose:
+            total_render_time_ms = (time.time() - render_start) * 1000
+
+            # Log timing breakdown if render is slow (>10ms)
+            if total_render_time_ms > 10:
+                layers = []
+                if show_raw: layers.append("raw")
+                if show_lanes: layers.append("lanes")
+                if show_canny: layers.append("canny")
+                if show_hough: layers.append("hough")
+                if show_hud: layers.append("hud")
+                print(f"  [LAGGING_RENDER_WARN!] Total: {total_render_time_ms:.1f}ms | Layers: {'+'.join(layers)} | Store: {store_time_ms:.1f}ms")
+
+        # Broadcast frame to WebSocket clients
+        if self.verbose:
+            ws_start = time.time()
+        self._broadcast_frame_ws()
+        if self.verbose:
+            ws_time_ms = (time.time() - ws_start) * 1000
+
+            # Log WebSocket timing if slow (>10ms)
+            if ws_time_ms > 10:
+                print(f"  [WEBSOCKET] Broadcast took {ws_time_ms:.1f}ms")
+
+    def _apply_normal_overlays(self, output: np.ndarray):
+        """
+        Apply normal mode overlays (ROI and lanes only, no HUD).
+
+        Modifies output in-place.
+
+        Args:
+            output: Image to apply overlays to
+        """
         # Draw ROI overlay (green trapezoid showing detection area)
         # Calculate ROI vertices (cached to avoid config loading on every frame)
-        # try:
-        #     height, width = output.shape[:2]
-        #     current_frame_size = (height, width)
+        try:
+            height, width = output.shape[:2]
+            current_frame_size = (height, width)
 
-        #     # Recalculate ROI if frame size changed or not cached
-        #     if self.roi_cache_frame_size != current_frame_size:
-        #         from skynet_common.config import ConfigManager
-        #         config = ConfigManager.load()
-        #         lane_config = config.lane_analyzer
+            # Recalculate ROI if frame size changed or not cached
+            if self.roi_cache_frame_size != current_frame_size:
+                # Use cached ROI config from initialization (no file I/O!)
+                self.roi_vertices_cache = np.array([[
+                    [int(width * self.roi_config['roi_bottom_left_x']), height],
+                    [int(width * self.roi_config['roi_top_left_x']), int(height * self.roi_config['roi_top_y'])],
+                    [int(width * self.roi_config['roi_top_right_x']), int(height * self.roi_config['roi_top_y'])],
+                    [int(width * self.roi_config['roi_bottom_right_x']), height]
+                ]], dtype=np.int32)
+                self.roi_cache_frame_size = current_frame_size
 
-        #         # Calculate ROI vertices from config parameters
-        #         self.roi_vertices_cache = np.array([[
-        #             [int(width * lane_config.roi_bottom_left_x), height],
-        #             [int(width * lane_config.roi_top_left_x), int(height * lane_config.roi_top_y)],
-        #             [int(width * lane_config.roi_top_right_x), int(height * lane_config.roi_top_y)],
-        #             [int(width * lane_config.roi_bottom_right_x), height]
-        #         ]], dtype=np.int32)
-        #         self.roi_cache_frame_size = current_frame_size
-
-        #     # Draw ROI as green polyline
-        #     if self.roi_vertices_cache is not None:
-        #         cv2.polylines(output, self.roi_vertices_cache, True, (0, 255, 0), 2)
-        # except Exception as e:
-        #     # If ROI drawing fails, continue without it
-        #     pass
+            # Draw ROI as green polyline
+            if self.roi_vertices_cache is not None:
+                cv2.polylines(output, self.roi_vertices_cache, True, (0, 255, 0), 2)
+        except Exception as e:
+            print(f"[Viewer] Warning: Failed to draw ROI overlay: {e}")
+            # If ROI drawing fails, continue without it
+            pass
 
         # Draw lane overlays if detection available
         if self.latest_detection:
@@ -267,52 +491,100 @@ class ZMQWebViewer:
                 rl = self.latest_detection.right_lane
                 right_lane = (int(rl['x1']), int(rl['y1']), int(rl['x2']), int(rl['y2']))
 
-            # Draw lanes
-            output = self.visualizer.draw_lanes(output, left_lane, right_lane, fill_lane=True)
+            # Draw lanes (note: draw_lanes returns a new image)
+            modified = self.visualizer.draw_lanes(output, left_lane, right_lane, fill_lane=True)
+            # Copy result back to output array
+            np.copyto(output, modified)
 
+    def _draw_hud_overlay(self, output: np.ndarray):
+        """
+        Draw HUD overlay (vehicle state, metrics, performance info).
+
+        Modifies output in-place.
+
+        Args:
+            output: Image to draw HUD on
+        """
         # Draw vehicle state overlay if available
         if self.latest_state:
             vehicle_telemetry = {
                 'speed_kmh': self.latest_state.speed_kmh,
+                'throttle': self.latest_state.throttle,
                 'position': self.latest_state.position,
                 'rotation': self.latest_state.rotation
             }
 
-            # Create metrics dict for HUD
-            metrics = {
-                'departure_status': LaneDepartureStatus.CENTERED,  # TODO: Calculate from lanes
-                'lateral_offset_meters': None,  # TODO: Calculate
-                'heading_angle_deg': None,  # TODO: Calculate
-                'lane_width_pixels': None  # TODO: Calculate
-            }
+            # Calculate lane metrics from detection data
+            height, width = output.shape[:2]
+            metrics = self._calculate_lane_metrics(width, height)
 
-            # Draw HUD with vehicle data
-            output = self.visualizer.draw_hud(
+            # Draw HUD with vehicle data (returns new image)
+            modified = self.visualizer.draw_hud(
                 output,
                 metrics,
                 show_steering=True,
                 steering_value=self.latest_state.steering,
                 vehicle_telemetry=vehicle_telemetry
             )
+            # Copy result back to output array
+            np.copyto(output, modified)
 
-            # Add performance info
-            if self.latest_detection:
+        # Add performance overlay (bottom-left corner) - only in verbose mode
+        if self.verbose and self.latest_frame_metadata:
+            frame_timestamp = self.latest_frame_metadata.get('timestamp', 0)
+            frame_id = self.latest_frame_metadata.get('frame_id', 'N/A')
+            decode_time = self.latest_frame_metadata.get('decode_time_ms', 0)
+
+            if frame_timestamp > 0:
+                current_time = time.time()
+                latency_ms = (current_time - frame_timestamp) * 1000
+
+                # Color-code latency: green (<100ms), yellow (100-500ms), red (>500ms)
+                if latency_ms < 100:
+                    color = (0, 255, 0)  # Green
+                elif latency_ms < 500:
+                    color = (0, 255, 255)  # Yellow
+                else:
+                    color = (0, 0, 255)  # Red
+
+                # Display in bottom-left corner
+                y_pos = output.shape[0] - 60
+
+                # Frame ID and latency
                 cv2.putText(
                     output,
-                    f"Detection: {self.latest_detection.processing_time_ms:.1f}ms",
-                    (10, output.shape[0] - 10),
+                    f"Frame: {frame_id} | Latency: {latency_ms:.1f}ms",
+                    (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
-                    (255, 255, 255),
+                    color,
                     1
                 )
 
-        # Store rendered frame
-        with self.render_lock:
-            self.rendered_frame = output
+                # Decode time if available
+                if decode_time > 0:
+                    decode_color = (0, 255, 255) if decode_time < 30 else (0, 0, 255)
+                    cv2.putText(
+                        output,
+                        f"Decode: {decode_time:.1f}ms",
+                        (10, y_pos + 20),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        decode_color,
+                        1
+                    )
 
-        # Broadcast frame to WebSocket clients
-        self._broadcast_frame_ws()
+                # Detection time if available
+                if self.latest_detection:
+                    cv2.putText(
+                        output,
+                        f"Detection: {self.latest_detection.processing_time_ms:.1f}ms",
+                        (10, y_pos + 40),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        (255, 255, 255),
+                        1
+                    )
 
     def _zmq_poll_loop(self):
         """ZMQ polling loop (runs in separate thread)."""
@@ -358,19 +630,37 @@ class ZMQWebViewer:
         # Remove disconnected clients
         with self.ws_lock:
             if not self.ws_clients:
-                return
+                return  # No clients, skip encoding entirely
 
         # Encode frame as JPEG (quality from config)
+        if self.verbose:
+            encode_start = time.time()
         success, buffer = cv2.imencode('.jpg', self.rendered_frame,
                                        [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+        if self.verbose:
+            encode_time_ms = (time.time() - encode_start) * 1000
+
         if not success:
             return
 
         # Send binary frame directly (no base64!)
         frame_bytes = buffer.tobytes()
+        frame_size_kb = len(frame_bytes) / 1024
+
+        # Log if JPEG encoding is slow (>10ms) or produces large files (only if verbose)
+        if self.verbose and (encode_time_ms > 10 or frame_size_kb > 100):
+            print(f"  [WS JPEG] Encode: {encode_time_ms:.1f}ms | Size: {frame_size_kb:.1f}KB | Clients: {len(self.ws_clients)}")
 
         # Broadcast binary to all connected clients
+        if self.verbose:
+            broadcast_start = time.time()
         self._broadcast_ws_binary(frame_bytes)
+        if self.verbose:
+            broadcast_time_ms = (time.time() - broadcast_start) * 1000
+
+            # Log if broadcasting is slow
+            if broadcast_time_ms > 10:
+                print(f"  [WS SEND] Broadcast to {len(self.ws_clients)} clients took {broadcast_time_ms:.1f}ms")
 
     def _broadcast_status_ws(self):
         """Broadcast status to all WebSocket clients."""
@@ -466,9 +756,64 @@ class ZMQWebViewer:
                         category = data.get('category')
                         parameter = data.get('parameter')
                         value = float(data.get('value'))
+
+                        # Update local ROI config if it's a ROI parameter
+                        if parameter.startswith('roi_'):
+                            self.roi_config[parameter] = value
+                            # Invalidate ROI cache to force recalculation with new parameters
+                            self.roi_cache_frame_size = None
+                            if self.verbose:
+                                print(f"[ROI] Updated local ROI config: {parameter} = {value}")
+
+                        # Update local CV detection parameters (used for viewer's own Canny/Hough rendering)
+                        if parameter == 'canny_low':
+                            self.canny_low = int(value)
+                        elif parameter == 'canny_high':
+                            self.canny_high = int(value)
+                        elif parameter == 'hough_threshold':
+                            self.hough_threshold = int(value)
+                        elif parameter == 'hough_min_line_len':
+                            self.hough_min_line_len = int(value)
+                        elif parameter == 'hough_max_line_gap':
+                            self.hough_max_line_gap = int(value)
+                        elif parameter == 'smoothing_factor':
+                            self.smoothing_factor = float(value)
+
+                        if self.verbose and parameter in ['canny_low', 'canny_high', 'hough_threshold',
+                                                           'hough_min_line_len', 'hough_max_line_gap',
+                                                           'smoothing_factor']:
+                            print(f"[CV] Updated local viewer rendering: {parameter} = {value}")
+
                         self.parameter_publisher.send_parameter(category, parameter, value)
                         if self.verbose:
                             print(f"[WebSocket] Parameter from {client_addr}: {category}.{parameter} = {value}")
+
+                    elif msg_type == 'toggle':
+                        # Handle visualization layer toggle (raw_image, lanes, canny, hough, hud)
+                        setting = data.get('setting')
+                        enabled = data.get('enabled', True)
+
+                        with self.display_lock:
+                            if setting == 'raw_image':
+                                self.show_raw_image = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] Raw image: {'ON' if enabled else 'OFF'}")
+                            elif setting == 'lanes':
+                                self.show_lanes = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] Lanes: {'ON' if enabled else 'OFF'}")
+                            elif setting == 'canny':
+                                self.show_canny = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] Canny: {'ON' if enabled else 'OFF'}")
+                            elif setting == 'hough':
+                                self.show_hough = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] Hough: {'ON' if enabled else 'OFF'}")
+                            elif setting == 'hud':
+                                self.show_hud = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] HUD: {'ON' if enabled else 'OFF'}")
 
                 except json.JSONDecodeError:
                     print(f"[WebSocket] Invalid JSON from {client_addr}")
@@ -600,6 +945,33 @@ class ZMQWebViewer:
                         parameter = data.get('parameter')
                         value = float(data.get('value'))
 
+                        # Update local ROI config if it's a ROI parameter
+                        if parameter.startswith('roi_'):
+                            viewer_self.roi_config[parameter] = value
+                            # Invalidate ROI cache to force recalculation with new parameters
+                            viewer_self.roi_cache_frame_size = None
+                            if viewer_self.verbose:
+                                print(f"[ROI] Updated local ROI config: {parameter} = {value}")
+
+                        # Update local CV detection parameters (used for viewer's own Canny/Hough rendering)
+                        if parameter == 'canny_low':
+                            viewer_self.canny_low = int(value)
+                        elif parameter == 'canny_high':
+                            viewer_self.canny_high = int(value)
+                        elif parameter == 'hough_threshold':
+                            viewer_self.hough_threshold = int(value)
+                        elif parameter == 'hough_min_line_len':
+                            viewer_self.hough_min_line_len = int(value)
+                        elif parameter == 'hough_max_line_gap':
+                            viewer_self.hough_max_line_gap = int(value)
+                        elif parameter == 'smoothing_factor':
+                            viewer_self.smoothing_factor = float(value)
+
+                        if viewer_self.verbose and parameter in ['canny_low', 'canny_high', 'hough_threshold',
+                                                                  'hough_min_line_len', 'hough_max_line_gap',
+                                                                  'smoothing_factor']:
+                            print(f"[CV] Updated local viewer rendering: {parameter} = {value}")
+
                         # Send parameter update via ZMQ
                         viewer_self.parameter_publisher.send_parameter(category, parameter, value)
 
@@ -709,7 +1081,22 @@ class ZMQWebViewer:
                 return template.format(
                     vehicle_url=viewer_self.vehicle_url,
                     target=viewer_self.target.upper(),
-                    respawn_display=respawn_display
+                    respawn_display=respawn_display,
+                    # ROI parameters
+                    roi_bottom_left_x=viewer_self.roi_config['roi_bottom_left_x'],
+                    roi_top_left_x=viewer_self.roi_config['roi_top_left_x'],
+                    roi_top_right_x=viewer_self.roi_config['roi_top_right_x'],
+                    roi_bottom_right_x=viewer_self.roi_config['roi_bottom_right_x'],
+                    roi_top_y=viewer_self.roi_config['roi_top_y'],
+                    # CV detection parameters
+                    canny_low=viewer_self.canny_low,
+                    canny_high=viewer_self.canny_high,
+                    hough_threshold=viewer_self.hough_threshold,
+                    hough_min_line_len=viewer_self.hough_min_line_len,
+                    hough_max_line_gap=viewer_self.hough_max_line_gap,
+                    smoothing_factor=viewer_self.smoothing_factor,
+                    # Throttle policy
+                    throttle_base=ConfigManager.load().throttle_policy.base
                 )
 
         # Start HTTP server with error handling wrapper
@@ -784,13 +1171,6 @@ def main():
     """Main entry point for ZMQ web viewer."""
     import argparse
 
-    # Load viewer-specific config for target presets
-    viewer_config_path = Path(__file__).parent.parent / 'config.yaml'
-    viewer_config = {}
-    if viewer_config_path.exists():
-        with open(viewer_config_path, 'r') as f:
-            viewer_config = yaml.safe_load(f) or {}
-
     # Load common config for default communication settings
     common_config = ConfigManager.load()
     comm = common_config.communication
@@ -801,7 +1181,7 @@ def main():
     default_param_url = f"tcp://*:{comm.zmq_parameter_port}"
 
     parser = argparse.ArgumentParser(description="ZMQ Web Viewer - Laptop Side")
-    parser.add_argument('--target', type=str, default='simulation',
+    parser.add_argument('--target', type=str, default='vehicle',
                        choices=['simulation', 'vehicle'],
                        help="Target to connect to: 'simulation' (CARLA) or 'vehicle' (Jetracer). Default: simulation")
     parser.add_argument('--vehicle', type=str, default=None,
@@ -819,15 +1199,14 @@ def main():
 
     args = parser.parse_args()
 
-    # Apply target presets
-    targets = viewer_config.get('targets', {})
-    target_config = targets.get(args.target, {})
+    # Apply target presets from constants
+    target_config = get_target_config(args.target)
 
     # Use preset values or fall back to defaults
     broadcast_host = target_config.get('broadcast_host', comm.zmq_broadcast_host)
-    broadcast_port = target_config.get('broadcast_port', comm.zmq_broadcast_port)
-    action_port = target_config.get('action_port', comm.zmq_action_port)
-    parameter_port = target_config.get('parameter_port', comm.zmq_parameter_port)
+    broadcast_port = comm.zmq_broadcast_port
+    action_port = comm.zmq_action_port
+    parameter_port = comm.zmq_parameter_port
 
     # Build URLs from preset (or override with explicit args)
     vehicle_url = args.vehicle or f"tcp://{broadcast_host}:{broadcast_port}"

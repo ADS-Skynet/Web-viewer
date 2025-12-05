@@ -71,6 +71,73 @@
         .btn.warning:hover {{
             background: #F57C00;
         }}
+        .btn.success {{
+            background: #4CAF50;
+        }}
+        .btn.success:hover {{
+            background: #45a049;
+        }}
+        .mode-controls {{
+            margin-top: 20px;
+            padding: 15px;
+            background: #2d2d2d;
+            border-radius: 8px;
+        }}
+        .mode-controls h3 {{
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            color: #2196F3;
+        }}
+        .mode-buttons {{
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+        .mode-btn {{
+            padding: 10px 20px;
+            background: #4a4a4a;
+            border: 2px solid #4a4a4a;
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }}
+        .mode-btn:hover {{
+            background: #5a5a5a;
+            border-color: #5a5a5a;
+        }}
+        .mode-btn.active {{
+            background: #4CAF50;
+            border-color: #4CAF50;
+        }}
+        .toggle-controls {{
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #4a4a4a;
+        }}
+        .toggle-buttons {{
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+        .toggle-btn {{
+            padding: 8px 16px;
+            background: #4CAF50;
+            border: 2px solid #4CAF50;
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }}
+        .toggle-btn:hover {{
+            opacity: 0.8;
+        }}
+        .toggle-btn.off {{
+            background: #666;
+            border-color: #666;
+        }}
         .info {{
             margin-top: 20px;
             padding: 15px;
@@ -153,6 +220,17 @@
         <div class="controls">
             <button class="btn primary" id="respawnBtn" onclick="sendAction('respawn')" style="display: {respawn_display};">🔄 Respawn Vehicle</button>
             <button class="btn warning" id="pauseBtn" onclick="togglePause()">🛑 Stop</button>
+            <button class="btn" id="resetBtn" onclick="resetSystem()">🔄 Reset System</button>
+        </div>
+        <div class="mode-controls">
+            <h3>🎨 Visualization Layers</h3>
+            <div class="toggle-buttons">
+                <button class="toggle-btn" id="rawImageToggle" onclick="toggleRawImage()">📷 Raw Image: ON</button>
+                <button class="toggle-btn" id="lanesToggle" onclick="toggleLanes()">🛣️ Lanes: ON</button>
+                <button class="toggle-btn off" id="cannyToggle" onclick="toggleCanny()">⚪ Canny: OFF</button>
+                <button class="toggle-btn off" id="houghToggle" onclick="toggleHough()">🔴 Hough: OFF</button>
+                <button class="toggle-btn" id="hudToggle" onclick="toggleHUD()">📊 HUD: ON</button>
+            </div>
         </div>
         <div class="info">
             <div class="info-item">
@@ -180,33 +258,39 @@
                 <h3>🔍 Detection Parameters</h3>
                 <div class="param-control">
                     <label>Canny Low Threshold</label>
-                    <input type="range" id="canny_low" min="1" max="150" value="50" step="1"
+                    <input type="range" id="canny_low" min="1" max="150" value="{canny_low}" step="1"
                            oninput="updateParam('detection', 'canny_low', this.value)">
-                    <span class="param-value" id="canny_low_val">50</span>
+                    <span class="param-value" id="canny_low_val">{canny_low}</span>
                 </div>
                 <div class="param-control">
                     <label>Canny High Threshold</label>
-                    <input type="range" id="canny_high" min="50" max="255" value="150" step="1"
+                    <input type="range" id="canny_high" min="50" max="255" value="{canny_high}" step="1"
                            oninput="updateParam('detection', 'canny_high', this.value)">
-                    <span class="param-value" id="canny_high_val">150</span>
+                    <span class="param-value" id="canny_high_val">{canny_high}</span>
                 </div>
                 <div class="param-control">
                     <label>Hough Threshold</label>
-                    <input type="range" id="hough_threshold" min="1" max="150" value="50" step="1"
+                    <input type="range" id="hough_threshold" min="1" max="150" value="{hough_threshold}" step="1"
                            oninput="updateParam('detection', 'hough_threshold', this.value)">
-                    <span class="param-value" id="hough_threshold_val">50</span>
+                    <span class="param-value" id="hough_threshold_val">{hough_threshold}</span>
                 </div>
                 <div class="param-control">
                     <label>Hough Min Line Length</label>
-                    <input type="range" id="hough_min_line_len" min="10" max="150" value="40" step="5"
+                    <input type="range" id="hough_min_line_len" min="10" max="150" value="{hough_min_line_len}" step="5"
                            oninput="updateParam('detection', 'hough_min_line_len', this.value)">
-                    <span class="param-value" id="hough_min_line_len_val">40</span>
+                    <span class="param-value" id="hough_min_line_len_val">{hough_min_line_len}</span>
+                </div>
+                <div class="param-control">
+                    <label>Hough Max Line Gap</label>
+                    <input type="range" id="hough_max_line_gap" min="10" max="300" value="{hough_max_line_gap}" step="10"
+                           oninput="updateParam('detection', 'hough_max_line_gap', this.value)">
+                    <span class="param-value" id="hough_max_line_gap_val">{hough_max_line_gap}</span>
                 </div>
                 <div class="param-control">
                     <label>Smoothing Factor</label>
-                    <input type="range" id="smoothing_factor" min="0" max="1" value="0.7" step="0.05"
+                    <input type="range" id="smoothing_factor" min="0" max="1" value="{smoothing_factor}" step="0.05"
                            oninput="updateParam('detection', 'smoothing_factor', this.value)">
-                    <span class="param-value" id="smoothing_factor_val">0.70</span>
+                    <span class="param-value" id="smoothing_factor_val">{smoothing_factor:.2f}</span>
                 </div>
             </div>
 
@@ -232,9 +316,9 @@
                 </div>
                 <div class="param-control">
                     <label>Base Throttle</label>
-                    <input type="range" id="throttle_base" min="0" max="0.5" value="0.14" step="0.01"
+                    <input type="range" id="throttle_base" min="0" max="0.5" value="{throttle_base}" step="0.01"
                            oninput="updateParam('decision', 'throttle_base', this.value)">
-                    <span class="param-value" id="throttle_base_val">0.14</span>
+                    <span class="param-value" id="throttle_base_val">{throttle_base:.2f}</span>
                 </div>
                 <div class="param-control">
                     <label>Min Throttle</label>
@@ -249,6 +333,16 @@
                     <span class="param-value" id="steer_threshold_val">0.15</span>
                 </div>
             </div>
+
+            <div class="param-section">
+                <h3>🚗 Vehicle Control</h3>
+                <div class="param-control">
+                    <label>Throttle</label>
+                    <input type="range" id="throttle" min="0" max="0.5" value="{throttle_base}" step="0.01"
+                           oninput="updateParam('vehicle', 'throttle', this.value)">
+                    <span class="param-value" id="throttle_val">{throttle_base:.2f}</span>
+                </div>
+            </div>
         </div>
 
         <div class="params-container">
@@ -256,21 +350,21 @@
                 <h3>📐 ROI (Region of Interest) Parameters</h3>
                 <div class="param-control">
                     <label>ROI Bottom Left X</label>
-                    <input type="range" id="roi_bottom_left_x" min="0" max="0.3" value="0.05" step="0.01"
+                    <input type="range" id="roi_bottom_left_x" min="0" max="0.3" value="{roi_bottom_left_x}" step="0.01"
                            oninput="updateParam('detection', 'roi_bottom_left_x', this.value)">
-                    <span class="param-value" id="roi_bottom_left_x_val">0.05</span>
+                    <span class="param-value" id="roi_bottom_left_x_val">{roi_bottom_left_x:.2f}</span>
                 </div>
                 <div class="param-control">
                     <label>ROI Top Left X</label>
-                    <input type="range" id="roi_top_left_x" min="0.2" max="0.5" value="0.35" step="0.01"
+                    <input type="range" id="roi_top_left_x" min="0.2" max="0.5" value="{roi_top_left_x}" step="0.01"
                            oninput="updateParam('detection', 'roi_top_left_x', this.value)">
-                    <span class="param-value" id="roi_top_left_x_val">0.35</span>
+                    <span class="param-value" id="roi_top_left_x_val">{roi_top_left_x:.2f}</span>
                 </div>
                 <div class="param-control">
                     <label>ROI Top Right X</label>
-                    <input type="range" id="roi_top_right_x" min="0.5" max="0.8" value="0.65" step="0.01"
+                    <input type="range" id="roi_top_right_x" min="0.5" max="0.8" value="{roi_top_right_x}" step="0.01"
                            oninput="updateParam('detection', 'roi_top_right_x', this.value)">
-                    <span class="param-value" id="roi_top_right_x_val">0.65</span>
+                    <span class="param-value" id="roi_top_right_x_val">{roi_top_right_x:.2f}</span>
                 </div>
             </div>
 
@@ -278,15 +372,15 @@
                 <h3>📐 ROI Parameters (continued)</h3>
                 <div class="param-control">
                     <label>ROI Bottom Right X</label>
-                    <input type="range" id="roi_bottom_right_x" min="0.7" max="1.0" value="0.95" step="0.01"
+                    <input type="range" id="roi_bottom_right_x" min="0.7" max="1.0" value="{roi_bottom_right_x}" step="0.01"
                            oninput="updateParam('detection', 'roi_bottom_right_x', this.value)">
-                    <span class="param-value" id="roi_bottom_right_x_val">0.95</span>
+                    <span class="param-value" id="roi_bottom_right_x_val">{roi_bottom_right_x:.2f}</span>
                 </div>
                 <div class="param-control">
                     <label>ROI Top Y</label>
-                    <input type="range" id="roi_top_y" min="0.3" max="0.7" value="0.5" step="0.01"
+                    <input type="range" id="roi_top_y" min="0.3" max="0.7" value="{roi_top_y}" step="0.01"
                            oninput="updateParam('detection', 'roi_top_y', this.value)">
-                    <span class="param-value" id="roi_top_y_val">0.50</span>
+                    <span class="param-value" id="roi_top_y_val">{roi_top_y:.2f}</span>
                 </div>
             </div>
         </div>
@@ -509,6 +603,146 @@
             sendAction(isPaused ? 'resume' : 'stop');
         }}
 
+        function resetSystem() {{
+            // Reset vehicle: set steering to 0 and pause
+            sendAction('reset');
+
+            // Reset LKAS decision module: clear PID error accumulation
+            sendWebSocketMessage({{
+                type: 'parameter',
+                category: 'decision',
+                parameter: 'reset',
+                value: 1.0
+            }});
+
+            // Reset LKAS detection module: clear lane smoothing history
+            sendWebSocketMessage({{
+                type: 'parameter',
+                category: 'detection',
+                parameter: 'reset',
+                value: 1.0
+            }});
+
+            showNotification('System reset: Vehicle paused, steering zeroed, all state cleared');
+        }}
+
+        // Toggle states (default: raw image, lanes, and HUD ON; canny and hough OFF)
+        let rawImageEnabled = true;
+        let lanesEnabled = true;
+        let cannyEnabled = false;
+        let houghEnabled = false;
+        let hudEnabled = true;
+
+        function toggleRawImage() {{
+            rawImageEnabled = !rawImageEnabled;
+            const btn = document.getElementById('rawImageToggle');
+
+            if (rawImageEnabled) {{
+                btn.textContent = '📷 Raw Image: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '📷 Raw Image: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'raw_image',
+                enabled: rawImageEnabled
+            }});
+
+            showNotification('Raw Image: ' + (rawImageEnabled ? 'ON' : 'OFF'));
+        }}
+
+        function toggleLanes() {{
+            lanesEnabled = !lanesEnabled;
+            const btn = document.getElementById('lanesToggle');
+
+            if (lanesEnabled) {{
+                btn.textContent = '🛣️ Lanes: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '🛣️ Lanes: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'lanes',
+                enabled: lanesEnabled
+            }});
+
+            showNotification('Lanes: ' + (lanesEnabled ? 'ON' : 'OFF'));
+        }}
+
+        function toggleCanny() {{
+            cannyEnabled = !cannyEnabled;
+            const btn = document.getElementById('cannyToggle');
+
+            if (cannyEnabled) {{
+                btn.textContent = '⚪ Canny: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '⚪ Canny: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'canny',
+                enabled: cannyEnabled
+            }});
+
+            showNotification('Canny: ' + (cannyEnabled ? 'ON' : 'OFF'));
+        }}
+
+        function toggleHough() {{
+            houghEnabled = !houghEnabled;
+            const btn = document.getElementById('houghToggle');
+
+            if (houghEnabled) {{
+                btn.textContent = '🔴 Hough: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '🔴 Hough: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'hough',
+                enabled: houghEnabled
+            }});
+
+            showNotification('Hough: ' + (houghEnabled ? 'ON' : 'OFF'));
+        }}
+
+        function toggleHUD() {{
+            hudEnabled = !hudEnabled;
+            const btn = document.getElementById('hudToggle');
+
+            if (hudEnabled) {{
+                btn.textContent = '📊 HUD: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '📊 HUD: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'hud',
+                enabled: hudEnabled
+            }});
+
+            showNotification('HUD: ' + (hudEnabled ? 'ON' : 'OFF'));
+        }}
+
         function showNotification(message, isError = false) {{
             const notif = document.getElementById('notification');
             notif.textContent = message;
@@ -521,12 +755,15 @@
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(event) {{
-            if (event.key === 'r' || event.key === 'R') {{
+            if (event.key === 's' || event.key === 'S') {{
                 event.preventDefault();
                 sendAction('respawn');
             }} else if (event.key === ' ') {{
                 event.preventDefault();
                 togglePause();
+            }} else if (event.key === 'f' || event.key === 'F') {{
+                event.preventDefault();
+                resetSystem();
             }}
         }});
 
