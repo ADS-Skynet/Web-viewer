@@ -89,6 +89,7 @@ class ZMQWebViewer:
         # Latest data from vehicle
         self.latest_frame: Optional[np.ndarray] = None
         self.latest_frame_metadata: Dict[str, Any] = {}  # Store metadata for latency display
+        self.latest_frame_jpeg_bytes: Optional[bytes] = None  # Store original JPEG bytes for optimization
         self.latest_detection: Optional[DetectionData] = None
         self.latest_state: Optional[VehicleState] = None
         self.latest_metrics: Dict[str, Any] = {}
@@ -226,6 +227,8 @@ class ZMQWebViewer:
         """
         self.latest_frame = image
         self.latest_frame_metadata = metadata  # Store for latency calculation
+        # Store original JPEG bytes if available (for optimization)
+        self.latest_frame_jpeg_bytes = metadata.get('original_jpeg_bytes')
         self.frames_received += 1
 
         # Mark stream as active when receiving frames (not just state)
@@ -740,16 +743,47 @@ class ZMQWebViewer:
             if not self.ws_clients:
                 return  # No clients, skip encoding entirely
 
-        # Encode frame as JPEG (quality from config)
-        if self.verbose:
-            encode_start = time.time()
-        success, buffer = cv2.imencode('.jpg', self.rendered_frame,
-                                       [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
-        if self.verbose:
-            encode_time_ms = (time.time() - encode_start) * 1000
+        # Optimization: Check if we can reuse original JPEG bytes
+        # This avoids double JPEG encoding when:
+        # 1. Frame was received as JPEG from lkas (raw_rgb=false)
+        # 2. No overlays are enabled (frame is unmodified)
+        # 3. JPEG quality matches between ZMQ and WebSocket
+        can_reuse_jpeg = False
+        with self.display_lock:
+            # Check if frame is unmodified (only raw image, no overlays)
+            frame_is_unmodified = (
+                self.show_raw_image and
+                not self.show_lanes and
+                not self.show_canny and
+                not self.show_hough and
+                not self.show_hud
+            )
 
-        if not success:
-            return
+        if frame_is_unmodified and self.latest_frame_jpeg_bytes is not None:
+            # Check if JPEG quality matches
+            source_quality = self.latest_frame_metadata.get('jpeg_quality')
+            if source_quality == self.jpeg_quality:
+                # Perfect match! Reuse original JPEG bytes
+                frame_bytes = self.latest_frame_jpeg_bytes
+                can_reuse_jpeg = True
+                if self.verbose:
+                    frame_size_kb = len(frame_bytes) / 1024
+                    print(f"  [WS JPEG] Reusing original JPEG (quality={source_quality}, size={frame_size_kb:.1f}KB) - skipped re-encoding")
+            else:
+                if self.verbose:
+                    print(f"  [WS JPEG] Quality mismatch (source={source_quality}, target={self.jpeg_quality}) - re-encoding")
+
+        # Encode frame if we can't reuse original JPEG
+        if not can_reuse_jpeg:
+            if self.verbose:
+                encode_start = time.time()
+            success, buffer = cv2.imencode('.jpg', self.rendered_frame,
+                                            [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+            if self.verbose:
+                encode_time_ms = (time.time() - encode_start) * 1000
+
+            if not success:
+                return
 
         # Send binary frame directly (no base64!)
         frame_bytes = buffer.tobytes()
