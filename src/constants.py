@@ -21,11 +21,10 @@ class Streaming:
 
     JPEG_QUALITY = 75          # JPEG compression quality for WebSocket (0-100, lower = faster)
 
-    # Only the RAW_RGB HAS SET AS TRUE, it would be needed
-    # to adjust the quality for websocket overloads.
-
-    # Otherwise, the jpeg quality would apply in advance from the lkas module.
-    # So, in the viewer, it doesn't be needed to adjust it again.
+    # Quality policy based on source format:
+    # - raw_rgb=true:  Viewer encodes with this quality (controls WebSocket bandwidth)
+    # - raw_rgb=false: Viewer uses quality 100 (minimize re-encoding loss)
+    #                  Original quality is already applied by LKAS from config.yaml
 
 
 class Targets:

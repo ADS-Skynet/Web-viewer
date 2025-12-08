@@ -744,10 +744,9 @@ class ZMQWebViewer:
                 return  # No clients, skip encoding entirely
 
         # Optimization: Check if we can reuse original JPEG bytes
-        # This avoids double JPEG encoding when:
+        # This avoids re-encoding when:
         # 1. Frame was received as JPEG from lkas (raw_rgb=false)
         # 2. No overlays are enabled (frame is unmodified)
-        # 3. JPEG quality matches between ZMQ and WebSocket
         can_reuse_jpeg = False
         with self.display_lock:
             # Check if frame is unmodified (only raw image, no overlays)
@@ -760,38 +759,44 @@ class ZMQWebViewer:
             )
 
         if frame_is_unmodified and self.latest_frame_jpeg_bytes is not None:
-            # Check if JPEG quality matches
-            source_quality = self.latest_frame_metadata.get('jpeg_quality')
-            if source_quality == self.jpeg_quality:
-                # Perfect match! Reuse original JPEG bytes
-                frame_bytes = self.latest_frame_jpeg_bytes
-                can_reuse_jpeg = True
-                if self.verbose:
-                    frame_size_kb = len(frame_bytes) / 1024
-                    print(f"  [WS JPEG] Reusing original JPEG (quality={source_quality}, size={frame_size_kb:.1f}KB) - skipped re-encoding")
-            else:
-                if self.verbose:
-                    print(f"  [WS JPEG] Quality mismatch (source={source_quality}, target={self.jpeg_quality}) - re-encoding")
+            # Reuse original JPEG bytes (skip re-encoding entirely)
+            frame_bytes = self.latest_frame_jpeg_bytes
+            can_reuse_jpeg = True
+            if self.verbose:
+                frame_size_kb = len(frame_bytes) / 1024
+                source_quality = self.latest_frame_metadata.get('jpeg_quality', 'unknown')
+                print(f"  [WS JPEG] Reusing original JPEG (quality={source_quality}, size={frame_size_kb:.1f}KB) - skipped re-encoding")
 
         # Encode frame if we can't reuse original JPEG
         if not can_reuse_jpeg:
+            # Determine quality based on source format:
+            # - raw_rgb: Use viewer's quality setting (for WebSocket bandwidth control)
+            # - jpeg: Use quality 100 (minimize re-encoding loss, already compressed by LKAS)
+            frame_format = self.latest_frame_metadata.get('format', 'jpeg')
+            if frame_format == 'raw_rgb':
+                encode_quality = self.jpeg_quality  # Use viewer's setting (e.g., 75)
+                quality_reason = "raw_rgb source"
+            else:
+                encode_quality = 100  # Max quality to minimize re-encoding loss
+                quality_reason = "jpeg source (minimize re-encoding loss)"
+
             if self.verbose:
                 encode_start = time.time()
             success, buffer = cv2.imencode('.jpg', self.rendered_frame,
-                                            [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality])
+                                            [cv2.IMWRITE_JPEG_QUALITY, encode_quality])
             if self.verbose:
                 encode_time_ms = (time.time() - encode_start) * 1000
 
             if not success:
                 return
 
-        # Send binary frame directly (no base64!)
-        frame_bytes = buffer.tobytes()
-        frame_size_kb = len(frame_bytes) / 1024
+            # Send binary frame directly (no base64!)
+            frame_bytes = buffer.tobytes()
+            frame_size_kb = len(frame_bytes) / 1024
 
-        # Log if JPEG encoding is slow (>10ms) or produces large files (only if verbose)
-        if self.verbose and (encode_time_ms > 10 or frame_size_kb > 100):
-            print(f"  [WS JPEG] Encode: {encode_time_ms:.1f}ms | Size: {frame_size_kb:.1f}KB | Clients: {len(self.ws_clients)}")
+            # Log if JPEG encoding is slow (>10ms) or produces large files (only if verbose)
+            if self.verbose and (encode_time_ms > 10 or frame_size_kb > 100):
+                print(f"  [WS JPEG] Encode: {encode_time_ms:.1f}ms | Size: {frame_size_kb:.1f}KB | Quality: {encode_quality} ({quality_reason}) | Clients: {len(self.ws_clients)}")
 
         # Broadcast binary to all connected clients
         if self.verbose:
