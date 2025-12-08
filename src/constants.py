@@ -21,17 +21,23 @@ class Streaming:
 
     JPEG_QUALITY = 75          # JPEG compression quality for WebSocket (0-100, lower = faster)
 
+    # Only the RAW_RGB HAS SET AS TRUE, it would be needed
+    # to adjust the quality for websocket overloads.
+
+    # Otherwise, the jpeg quality would apply in advance from the lkas module.
+    # So, in the viewer, it doesn't be needed to adjust it again.
+
 
 class Targets:
     """Target connection presets for simulation and vehicle."""
 
     # Target configurations: host addresses for different deployment scenarios
     SIMULATION = {
-        'broadcast_host': 'localhost'
+        'broadcast_host': 'jetracer.local'
     }
 
     VEHICLE = {
-        'broadcast_host': 'localhost'  # Will be Jetson's IP in production
+        'broadcast_host': 'jetracer.local'  # Will be Jetson's IP in production
     }
 
 
