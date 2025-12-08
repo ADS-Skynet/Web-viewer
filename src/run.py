@@ -723,7 +723,7 @@ class ZMQWebViewer:
             if self.verbose:
                 frame_size_kb = len(frame_bytes) / 1024
                 source_quality = self.latest_frame_metadata.get('jpeg_quality', 'unknown')
-                print(f"  [WS JPEG] Reusing original JPEG (quality={source_quality}, size={frame_size_kb:.1f}KB) - skipped re-encoding")
+                print(f"  [WS JPEG] Reusing original JPEG (quality={source_quality}, size={frame_size_kb:.1f}KB)")
 
         # Encode frame if we can't reuse original JPEG
         if not can_reuse_jpeg:
@@ -736,7 +736,7 @@ class ZMQWebViewer:
                 quality_reason = "raw_rgb source"
             else:
                 encode_quality = 100  # Max quality to minimize re-encoding loss
-                quality_reason = "jpeg source (minimize re-encoding loss)"
+                quality_reason = "jpeg source"
 
             if self.verbose:
                 encode_start = time.time()
