@@ -105,9 +105,6 @@ class ZMQWebViewer:
         self.frames_rendered = 0
         self.frames_dropped = 0
 
-        # WebSocket send buffer tracking (prevents bufferbloat on slow networks)
-        self.pending_sends: Dict[Any, tuple] = {}  # client -> (Future, timestamp)
-
         # WebSocket clients
         self.ws_clients: Set[websockets.WebSocketServerProtocol] = set()
         self.ws_lock = Lock()
@@ -658,45 +655,6 @@ class ZMQWebViewer:
                         1
                     )
 
-                # WebSocket buffer status (only in verbose mode)
-                # Shows "SYNCED" in green if buffers are clear, otherwise shows max buffer lag
-                with self.ws_lock:
-                    max_buffer_lag_ms = 0
-                    synced = True
-
-                    for client in self.ws_clients:
-                        if client in self.pending_sends:
-                            future, send_time = self.pending_sends[client]
-                            if not future.done():
-                                # Buffer has pending data
-                                buffer_lag_ms = (time.time() - send_time) * 1000
-                                max_buffer_lag_ms = max(max_buffer_lag_ms, buffer_lag_ms)
-                                synced = False
-
-                    # Display buffer status in bottom-left corner (below Detection)
-                    if synced:
-                        # All buffers clear - show "SYNCED" in green
-                        buffer_text = "WS: SYNCED"
-                        buffer_color = (0, 255, 0)  # Green
-                    else:
-                        # Some buffers have lag - show max lag in yellow/red
-                        buffer_text = f"WS: {max_buffer_lag_ms:.0f}ms"
-                        if max_buffer_lag_ms < 100:
-                            buffer_color = (0, 255, 255)  # Yellow
-                        else:
-                            buffer_color = (0, 0, 255)  # Red
-
-                    # Draw below Detection time
-                    cv2.putText(
-                        output,
-                        buffer_text,
-                        (10, y_pos + 60),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5,
-                        buffer_color,
-                        1
-                    )
-
     def _zmq_poll_loop(self):
         """ZMQ polling loop (runs in separate thread)."""
         print("[ZMQ] Polling loop started")
@@ -857,58 +815,26 @@ class ZMQWebViewer:
     def _broadcast_ws_binary(self, data: bytes):
         """
         Broadcast binary data to all WebSocket clients.
-
-        Implements buffer checking to prevent bufferbloat on slow networks:
-        - Checks if previous send is still pending
-        - Skips clients with full buffers (drops frame for that client)
-        - Prevents lag buildup when network can't keep up
         """
         # Check if WebSocket loop is ready
         if not hasattr(self, 'ws_loop') or self.ws_loop is None:
             return
 
-        current_time = time.time()
-
         with self.ws_lock:
             dead_clients = set()
-            skipped_clients = 0
-
             for client in self.ws_clients:
                 try:
-                    # Check if previous send is still pending (buffer full)
-                    if client in self.pending_sends:
-                        future, send_time = self.pending_sends[client]
-                        if not future.done():
-                            # Still pending - skip this frame to prevent bufferbloat
-                            skipped_clients += 1
-                            if self.verbose:
-                                buffer_lag_ms = (current_time - send_time) * 1000
-                                client_addr = f"{client.remote_address[0]}:{client.remote_address[1]}"
-                                print(f"  [WS Buffer] Skipped {client_addr} - buffer lag: {buffer_lag_ms:.0f}ms")
-                            continue  # Skip this client, previous frame still sending
-
-                    # Send new frame
-                    future = asyncio.run_coroutine_threadsafe(
+                    # Send frame to client
+                    asyncio.run_coroutine_threadsafe(
                         client.send(data),
                         self.ws_loop
                     )
-                    # Track this send with timestamp
-                    self.pending_sends[client] = (future, current_time)
-
                 except Exception:
                     # Mark client for removal
                     dead_clients.add(client)
 
             # Remove dead clients
             self.ws_clients -= dead_clients
-
-            # Clean up tracking for dead clients
-            for client in dead_clients:
-                self.pending_sends.pop(client, None)
-
-            # Log if we skipped clients (only in verbose mode)
-            if self.verbose and skipped_clients > 0:
-                print(f"  [WS Buffer] Skipped {skipped_clients} client(s) due to buffer backlog")
 
     async def _ws_handler(self, websocket):
         """Handle WebSocket connection."""
@@ -1004,10 +930,9 @@ class ZMQWebViewer:
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
-            # Unregister client and clean up pending sends
+            # Unregister client
             with self.ws_lock:
                 self.ws_clients.discard(websocket)
-                self.pending_sends.pop(websocket, None)  # Clean up buffer tracking
             print(f"[WebSocket] Client disconnected: {client_addr}")
 
     def _run_ws_server(self):
