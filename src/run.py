@@ -24,16 +24,16 @@ from typing import Optional, Dict, Any, Set
 from dataclasses import dataclass
 
 # Import ZMQ communication and visualization tools from skynet-common
-from skynet_common.communication import (
+from common.communication import (
     ViewerSubscriber,
     ActionPublisher,
     DetectionData,
     VehicleState,
     ParameterPublisher,
 )
-from skynet_common.visualization import LKASVisualizer
-from skynet_common.types import LaneDepartureStatus
-from skynet_common.config import ConfigManager
+from common.visualization import LKASVisualizer
+from common.types import LaneDepartureStatus
+from common.config import ConfigManager
 
 # Import module-specific constants
 from viewer.constants import FPS, Streaming, get_target_config
