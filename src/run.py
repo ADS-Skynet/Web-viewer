@@ -53,7 +53,9 @@ class ZMQWebViewer:
                  web_port: int = 8080,
                  verbose: bool = False,
                  lkas_mode: bool = True,
-                 target: str = "simulation"):
+                 target: str = "simulation",
+                 img_source: str = "jpeg",
+                 img_quality: int = 75):
         """
         Initialize ZMQ web viewer.
 
@@ -66,6 +68,7 @@ class ZMQWebViewer:
             lkas_mode: If True, connect to LKAS broker (default, new architecture).
                       If False, bind as server for simulation (old architecture).
             target: Target to connect to ("simulation" or "vehicle")
+            img_source: Image source format ("jpeg" or "raw_rgb")
         """
         self.vehicle_url = vehicle_url
         self.action_url = action_url
@@ -127,7 +130,9 @@ class ZMQWebViewer:
         self.zmq_poll_interval = 1.0 / FPS.ZMQ_POLL
 
         # Streaming quality (from constants)
-        self.jpeg_quality = Streaming.JPEG_QUALITY
+        # self.img_quality = Streaming.JPEG_QUALITY
+        self.img_source = img_source
+        self.img_quality = img_quality
 
         # ROI overlay cache (to avoid recomputing on every frame)
         self.roi_vertices_cache: Optional[np.ndarray] = None
@@ -172,6 +177,8 @@ class ZMQWebViewer:
         print(f"  Parameter server: {parameter_bind_url} ({'connect' if lkas_mode else 'bind'} mode)")
         print(f"  Web interface: http://localhost:{web_port}")
         print(f"  WebSocket server: ws://localhost:{self.ws_port}")
+        print(f"  Image source: {self.img_source}")
+        print(f"  Image quality: {self.img_quality}")
         print(f"{'='*60}\n")
 
     def start(self):
@@ -500,7 +507,7 @@ class ZMQWebViewer:
                 if show_canny: layers.append("canny")
                 if show_hough: layers.append("hough")
                 if show_hud: layers.append("hud")
-                print(f"  [RENDER_WARN!!] Total: {total_render_time_ms:.1f}ms | Layers: {'+'.join(layers)} | Store: {store_time_ms:.1f}ms")
+                print(f"  [Render Warn] Total: {total_render_time_ms:.1f}ms | Layers: {'+'.join(layers)} | Store: {store_time_ms:.1f}ms")
 
         # Broadcast frame to WebSocket clients
         if self.verbose:
@@ -510,8 +517,8 @@ class ZMQWebViewer:
             ws_time_ms = (time.time() - ws_start) * 1000
 
             # Log WebSocket timing if slow (>10ms)
-            if ws_time_ms > 10:
-                print(f"  [WEBSOCKET] Broadcast took {ws_time_ms:.1f}ms")
+            if ws_time_ms > 30:
+                print(f"  [WEBSOCKET Warn] Broadcast took {ws_time_ms:.1f}ms")
 
     def _apply_normal_overlays(self, output: np.ndarray):
         """
@@ -722,8 +729,8 @@ class ZMQWebViewer:
             can_reuse_jpeg = True
             if self.verbose:
                 frame_size_kb = len(frame_bytes) / 1024
-                source_quality = self.latest_frame_metadata.get('jpeg_quality', 'unknown')
-                print(f"  [WS JPEG] Reusing original JPEG (quality={source_quality}, size={frame_size_kb:.1f}KB)")
+                source_quality = self.latest_frame_metadata.get('img_quality', 'unknown')
+                print(f"  [Frame Send] Reusing original JPEG (quality={source_quality}, size={frame_size_kb:.1f}KB)")
 
         # Encode frame if we can't reuse original JPEG
         if not can_reuse_jpeg:
@@ -732,18 +739,14 @@ class ZMQWebViewer:
             # - jpeg: Use quality 100 (minimize re-encoding loss, already compressed by LKAS)
             frame_format = self.latest_frame_metadata.get('format', 'jpeg')
             if frame_format == 'raw_rgb':
-                encode_quality = self.jpeg_quality  # Use viewer's setting (e.g., 75)
+                encode_quality = self.img_quality  # Use viewer's setting (e.g., 75)
                 quality_reason = "raw_rgb source"
             else:
                 encode_quality = 100  # Max quality to minimize re-encoding loss
                 quality_reason = "jpeg source"
 
-            if self.verbose:
-                encode_start = time.time()
             success, buffer = cv2.imencode('.jpg', self.rendered_frame,
                                             [cv2.IMWRITE_JPEG_QUALITY, encode_quality])
-            if self.verbose:
-                encode_time_ms = (time.time() - encode_start) * 1000
 
             if not success:
                 return
@@ -751,10 +754,6 @@ class ZMQWebViewer:
             # Send binary frame directly (no base64!)
             frame_bytes = buffer.tobytes()
             frame_size_kb = len(frame_bytes) / 1024
-
-            # Log if JPEG encoding is slow (>10ms) or produces large files (only if verbose)
-            if self.verbose and (encode_time_ms > 10 or frame_size_kb > 100):
-                print(f"  [WS JPEG] Encode: {encode_time_ms:.1f}ms | Size: {frame_size_kb:.1f}KB | Quality: {encode_quality} ({quality_reason})")
 
         # Broadcast binary to all connected clients
         if self.verbose:
@@ -764,8 +763,8 @@ class ZMQWebViewer:
             broadcast_time_ms = (time.time() - broadcast_start) * 1000
 
             # Log if broadcasting is slow
-            if broadcast_time_ms > 10:
-                print(f"  [WS SEND] Broadcast to {len(self.ws_clients)} clients took {broadcast_time_ms:.1f}ms")
+            if broadcast_time_ms > 30:
+                print(f"  [Frame Send Warn] Broadcast to {len(self.ws_clients)} clients took {broadcast_time_ms:.1f}ms")
 
     def _broadcast_status_ws(self):
         """Broadcast status to all WebSocket clients."""
@@ -1323,6 +1322,9 @@ def main():
     # Determine mode: LKAS mode (connect to broker) is default
     lkas_mode = not args.simulation_mode
 
+    img_source = "jpeg" if common_config.streaming.raw_rgb == False else "raw_rgb"
+    img_quality = common_config.streaming.jpeg_quality if img_source == "jpeg" else Streaming.JPEG_QUALITY
+
     print(f"\n[Viewer] Starting with target: {args.target.upper()}")
 
     # Create and run viewer
@@ -1333,7 +1335,9 @@ def main():
         web_port=args.port,
         verbose=args.verbose,
         lkas_mode=lkas_mode,
-        target=args.target
+        target=args.target,
+        img_source=img_source,
+        img_quality=img_quality
     )
 
     viewer.start()
