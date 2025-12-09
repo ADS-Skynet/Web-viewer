@@ -500,7 +500,7 @@ class ZMQWebViewer:
                 if show_canny: layers.append("canny")
                 if show_hough: layers.append("hough")
                 if show_hud: layers.append("hud")
-                print(f"  [LAGGING_RENDER_WARN!] Total: {total_render_time_ms:.1f}ms | Layers: {'+'.join(layers)} | Store: {store_time_ms:.1f}ms")
+                print(f"  [RENDER_WARN!!] Total: {total_render_time_ms:.1f}ms | Layers: {'+'.join(layers)} | Store: {store_time_ms:.1f}ms")
 
         # Broadcast frame to WebSocket clients
         if self.verbose:
@@ -754,7 +754,7 @@ class ZMQWebViewer:
 
             # Log if JPEG encoding is slow (>10ms) or produces large files (only if verbose)
             if self.verbose and (encode_time_ms > 10 or frame_size_kb > 100):
-                print(f"  [WS JPEG] Encode: {encode_time_ms:.1f}ms | Size: {frame_size_kb:.1f}KB | Quality: {encode_quality} ({quality_reason}) | Clients: {len(self.ws_clients)}")
+                print(f"  [WS JPEG] Encode: {encode_time_ms:.1f}ms | Size: {frame_size_kb:.1f}KB | Quality: {encode_quality} ({quality_reason})")
 
         # Broadcast binary to all connected clients
         if self.verbose:
