@@ -15,6 +15,7 @@ import cv2
 import zmq
 import time
 import json
+import base64
 import asyncio
 import websockets
 from pathlib import Path
@@ -154,6 +155,7 @@ class ZMQWebViewer:
         self.show_canny = False  # Show Canny edges
         self.show_hough = False  # Show Hough lines
         self.show_hud = True  # Show HUD overlay
+        self.show_segmentation = True  # Show DL segmentation overlay (auto-enabled when DL detection)
         self.display_lock = Lock()
 
         # Cache Canny/Hough parameters from config
@@ -394,7 +396,9 @@ class ZMQWebViewer:
             # Print stats every 10 seconds (only if verbose)
             if self.verbose and time.time() - last_stats_time > 10:
                 drop_rate = (self.frames_dropped / max(self.frames_received, 1)) * 100
-                print(f"[Render Stats] Received: {self.frames_received} | Rendered: {self.frames_rendered} | Dropped: {self.frames_dropped} ({drop_rate:.1f}%)")
+                ws_client_count = len(self.ws_clients) if hasattr(self, 'ws_clients') else 0
+                ws_loop_ready = hasattr(self, 'ws_loop') and self.ws_loop is not None
+                print(f"[Render Stats] Received: {self.frames_received} | Rendered: {self.frames_rendered} | Dropped: {self.frames_dropped} ({drop_rate:.1f}%) | WS clients: {ws_client_count} | WS loop ready: {ws_loop_ready}")
                 last_stats_time = time.time()
 
         print("[Render] Render loop stopped")
@@ -457,6 +461,7 @@ class ZMQWebViewer:
             show_canny = self.show_canny
             show_hough = self.show_hough
             show_hud = self.show_hud
+            show_segmentation = self.show_segmentation
 
         # Step 1: Start with raw image or black background
         if show_raw:
@@ -477,6 +482,21 @@ class ZMQWebViewer:
             # Overlay hough lines (magenta lines on black, so we can just add where lines exist)
             mask = np.any(hough_result > 0, axis=2)
             output[mask] = hough_result[mask]
+
+        # Step 3.5: Overlay DL segmentation mask (if enabled and available)
+        if show_segmentation and self.latest_detection:
+            if (hasattr(self.latest_detection, 'segmentation_mask_base64') and
+                self.latest_detection.segmentation_mask_base64 is not None):
+                try:
+                    # Decode base64 PNG to numpy array
+                    mask_bytes = base64.b64decode(self.latest_detection.segmentation_mask_base64)
+                    mask_array = np.frombuffer(mask_bytes, dtype=np.uint8)
+                    seg_mask = cv2.imdecode(mask_array, cv2.IMREAD_GRAYSCALE)
+                    if seg_mask is not None:
+                        output = self.visualizer.draw_segmentation(output, seg_mask, alpha=0.35)
+                except Exception as e:
+                    if self.verbose:
+                        print(f"[Viewer] Warning: Failed to decode segmentation mask: {e}")
 
         # Step 4: Apply lane detection overlays (ROI + detected lanes)
         # This draws on top so actual detection is visible over Canny/Hough
@@ -720,7 +740,8 @@ class ZMQWebViewer:
                 not self.show_lanes and
                 not self.show_canny and
                 not self.show_hough and
-                not self.show_hud
+                not self.show_hud and
+                not self.show_segmentation
             )
 
         if frame_is_unmodified and self.latest_frame_jpeg_bytes is not None:
@@ -817,6 +838,8 @@ class ZMQWebViewer:
         """
         # Check if WebSocket loop is ready
         if not hasattr(self, 'ws_loop') or self.ws_loop is None:
+            if self.verbose:
+                print("[WebSocket] Warning: ws_loop not ready, skipping frame broadcast")
             return
 
         with self.ws_lock:
@@ -920,6 +943,10 @@ class ZMQWebViewer:
                                 self.show_hud = enabled
                                 if self.verbose:
                                     print(f"[WebSocket] HUD: {'ON' if enabled else 'OFF'}")
+                            elif setting == 'segmentation':
+                                self.show_segmentation = enabled
+                                if self.verbose:
+                                    print(f"[WebSocket] Segmentation: {'ON' if enabled else 'OFF'}")
 
                 except json.JSONDecodeError:
                     print(f"[WebSocket] Invalid JSON from {client_addr}")
@@ -950,6 +977,7 @@ class ZMQWebViewer:
                     ping_timeout=20
                 )
                 print(f"✓ WebSocket server started on port {self.ws_port}")
+                print(f"  Browser should connect to: ws://<your-ip>:{self.ws_port}")
                 self.ws_ready = True  # Signal that server is ready
                 return server
             except Exception as e:
