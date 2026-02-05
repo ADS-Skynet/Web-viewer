@@ -157,7 +157,7 @@ class ZMQWebViewer:
         self.show_lanes = True  # Show lane detection (ROI + lanes for CV, segmentation for DL)
         self.show_canny = False  # Show Canny edges (CV mode only)
         self.show_hough = False  # Show Hough lines (CV mode only)
-        self.show_hud = True  # Show HUD overlay
+        self.show_hud = False  # Show HUD overlay
         self.show_segmentation = (self.detection_method == 'dl')  # Auto-enable for DL mode
         self.display_lock = Lock()
 
@@ -177,7 +177,7 @@ class ZMQWebViewer:
         print("ZMQ Web Viewer - Laptop Side (WebSocket Edition)")
         print(f"{'='*60}")
         print(f"  Target: {target.upper()}")
-        print(f"  Detection: {self.detection_method.upper()}")
+        print(f"  Detection: {self.detection_method.upper()}, Segmentation Mask: {'shown' if self.show_segmentation else 'hidden'}")
         print(f"  Receiving from: {vehicle_url}")
         print(f"  Sending actions to: {action_url}")
         print(f"  Parameter server: {parameter_bind_url} ({'connect' if lkas_mode else 'bind'} mode)")
@@ -261,11 +261,11 @@ class ZMQWebViewer:
         self.latest_detection = detection
 
         # Auto-enable segmentation overlay when DL detection is received
-        if hasattr(detection, 'detection_method') and detection.detection_method == 'dl':
-            if not self.show_segmentation:
-                self.show_segmentation = True
-                self.detection_method = 'dl'
-                print(f"[Viewer] Auto-enabled segmentation overlay for DL mode")
+        # if hasattr(detection, 'detection_method') and detection.detection_method == 'dl':
+        #     if not self.show_segmentation:
+        #         self.show_segmentation = True
+        #         self.detection_method = 'dl'
+        #         print(f"[Viewer] Auto-enabled segmentation overlay for DL mode")
 
         # DON'T render here - wait for next frame
         # This prevents duplicate rendering which was causing lag
@@ -461,10 +461,11 @@ class ZMQWebViewer:
         THIS RUNS ON LAPTOP, NOT VEHICLE!
         Heavy drawing operations don't impact vehicle performance.
         """
-        render_start = time.time()  # MEASURE TOTAL RENDER TIME
+        if self.verbose:
+            render_start = time.time()  # MEASURE TOTAL RENDER TIME
 
-        if self.latest_frame is None:
-            return
+        # if self.latest_frame is None:
+        #     return
 
         # Get current display settings
         with self.display_lock:
@@ -497,42 +498,43 @@ class ZMQWebViewer:
 
         # Step 3.5: Overlay DL segmentation mask (if enabled and available)
         if show_segmentation and self.latest_detection:
-            has_mask_attr = hasattr(self.latest_detection, 'segmentation_mask_base64')
-            mask_value = getattr(self.latest_detection, 'segmentation_mask_base64', None)
+            # has_mask_attr = hasattr(self.latest_detection, 'segmentation_mask_base64')
+            # mask_value = getattr(self.latest_detection, 'segmentation_mask_base64', None)
 
             # Debug: Log once when mask status changes
-            if not hasattr(self, '_last_mask_debug_state'):
-                self._last_mask_debug_state = None
-            current_state = (has_mask_attr, mask_value is not None)
-            if current_state != self._last_mask_debug_state:
-                print(f"[Segmentation Debug] has_attr={has_mask_attr}, mask_is_not_none={mask_value is not None}, detection_method={getattr(self.latest_detection, 'detection_method', 'unknown')}")
-                self._last_mask_debug_state = current_state
+            # if not hasattr(self, '_last_mask_debug_state'):
+            #     self._last_mask_debug_state = None
+            # current_state = (has_mask_attr, mask_value is not None)
+            # if current_state != self._last_mask_debug_state:
+            #     print(f"[Segmentation Debug] has_attr={has_mask_attr}, mask_is_not_none={mask_value is not None}, detection_method={getattr(self.latest_detection, 'detection_method', 'unknown')}")
+            #     self._last_mask_debug_state = current_state
 
-            if has_mask_attr and mask_value is not None:
-                try:
-                    # Decode base64 PNG to numpy array
-                    mask_bytes = base64.b64decode(self.latest_detection.segmentation_mask_base64)
-                    mask_array = np.frombuffer(mask_bytes, dtype=np.uint8)
-                    seg_mask = cv2.imdecode(mask_array, cv2.IMREAD_GRAYSCALE)
-                    if seg_mask is not None:
-                        # Debug: Log mask stats once
-                        if not hasattr(self, '_mask_stats_logged'):
-                            nonzero = np.count_nonzero(seg_mask)
-                            print(f"[Segmentation Debug] Mask decoded: shape={seg_mask.shape}, nonzero={nonzero}, max={seg_mask.max()}")
-                            self._mask_stats_logged = True
-                        output = self.visualizer.draw_segmentation(output, seg_mask, alpha=0.35)
-                    else:
-                        # Debug: cv2.imdecode returned None
-                        if not hasattr(self, '_decode_fail_logged'):
-                            print(f"[Segmentation Debug] cv2.imdecode returned None - mask_bytes len={len(mask_bytes)}")
-                            self._decode_fail_logged = True
-                except Exception as e:
-                    print(f"[Viewer] Warning: Failed to decode segmentation mask: {e}")
+            # if has_mask_attr and mask_value is not None:
+            try:
+                # Decode base64 PNG to numpy array
+                mask_bytes = base64.b64decode(self.latest_detection.segmentation_mask_base64)
+                mask_array = np.frombuffer(mask_bytes, dtype=np.uint8)
+                seg_mask = cv2.imdecode(mask_array, cv2.IMREAD_GRAYSCALE)
+                if seg_mask is not None:
+                    # Debug: Log mask stats once
+                    # if not hasattr(self, '_mask_stats_logged'):
+                    #     nonzero = np.count_nonzero(seg_mask)
+                    #     print(f"[Segmentation Debug] Mask decoded: shape={seg_mask.shape}, nonzero={nonzero}, max={seg_mask.max()}")
+                    #     self._mask_stats_logged = True
+                    output = self.visualizer.draw_segmentation(output, seg_mask, alpha=0.35)
+                # else:
+                #     # Debug: cv2.imdecode returned None
+                #     if not hasattr(self, '_decode_fail_logged'):
+                #         print(f"[Segmentation Debug] cv2.imdecode returned None - mask_bytes len={len(mask_bytes)}")
+                #         self._decode_fail_logged = True
+                # output = self.visualizer.draw_segmentation(output, self.latest_detection.lanes, seg_mask)
+            except Exception as e:
+                print(f"[Viewer] Warning: Failed to decode segmentation mask: {e}")
 
         # Step 4: Apply lane detection overlays (ROI + detected lanes)
         # This draws on top so actual detection is visible over Canny/Hough
-        if show_lanes:
-            self._apply_normal_overlays(output)
+        # if show_lanes:
+        #     self._apply_normal_overlays(output)
 
         # Step 5: Add HUD on top of everything (if enabled)
         if show_hud:
@@ -639,7 +641,7 @@ class ZMQWebViewer:
             lanes: List of lane contour dicts with 'points', 'class_id', 'confidence'
         """
         # Transparent blue color for all lane classes (RGB format)
-        blue_color = (70, 130, 255)  # Light blue
+        blue_color = (173, 216, 230)  # Light blue
 
         for lane in lanes:
             points = lane.get('points', [])
@@ -653,7 +655,7 @@ class ZMQWebViewer:
 
             # Draw filled polygon with transparency (no border)
             overlay = output.copy()
-            cv2.fillPoly(overlay, [pts], blue_color)
+            # cv2.fillPoly(img=overlay, pts=[pts], color=blue_color)
             alpha = 0.35 * confidence  # Transparent blend based on confidence
             cv2.addWeighted(overlay, alpha, output, 1 - alpha, 0, output)
 
