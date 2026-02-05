@@ -149,13 +149,16 @@ class ZMQWebViewer:
             'roi_top_y': config.cv_detector.roi_top_y,
         }
 
+        # Detection method from config (cv or dl)
+        self.detection_method = config.detection_method
+
         # Visualization layer toggles (all independent)
         self.show_raw_image = True  # Show raw image as background
-        self.show_lanes = True  # Show lane detection (ROI + lanes)
-        self.show_canny = False  # Show Canny edges
-        self.show_hough = False  # Show Hough lines
+        self.show_lanes = True  # Show lane detection (ROI + lanes for CV, segmentation for DL)
+        self.show_canny = False  # Show Canny edges (CV mode only)
+        self.show_hough = False  # Show Hough lines (CV mode only)
         self.show_hud = True  # Show HUD overlay
-        self.show_segmentation = True  # Show DL segmentation overlay (auto-enabled when DL detection)
+        self.show_segmentation = (self.detection_method == 'dl')  # Auto-enable for DL mode
         self.display_lock = Lock()
 
         # Cache Canny/Hough parameters from config
@@ -174,6 +177,7 @@ class ZMQWebViewer:
         print("ZMQ Web Viewer - Laptop Side (WebSocket Edition)")
         print(f"{'='*60}")
         print(f"  Target: {target.upper()}")
+        print(f"  Detection: {self.detection_method.upper()}")
         print(f"  Receiving from: {vehicle_url}")
         print(f"  Sending actions to: {action_url}")
         print(f"  Parameter server: {parameter_bind_url} ({'connect' if lkas_mode else 'bind'} mode)")
@@ -255,6 +259,14 @@ class ZMQWebViewer:
     def _on_detection_received(self, detection: DetectionData):
         """Called when detection results received."""
         self.latest_detection = detection
+
+        # Auto-enable segmentation overlay when DL detection is received
+        if hasattr(detection, 'detection_method') and detection.detection_method == 'dl':
+            if not self.show_segmentation:
+                self.show_segmentation = True
+                self.detection_method = 'dl'
+                print(f"[Viewer] Auto-enabled segmentation overlay for DL mode")
+
         # DON'T render here - wait for next frame
         # This prevents duplicate rendering which was causing lag
 
@@ -470,14 +482,14 @@ class ZMQWebViewer:
             # Create black canvas with same dimensions
             output = np.zeros_like(self.latest_frame)
 
-        # Step 2: Overlay Canny edges (if enabled)
-        if show_canny:
+        # Step 2: Overlay Canny edges (if enabled) - CV mode only
+        if show_canny and self.detection_method == 'cv':
             canny_result = self._process_canny_mode(self.latest_frame)
             # Blend canny edges with current output (60/40)
             output = cv2.addWeighted(output, 0.6, canny_result, 0.4, 0)
 
-        # Step 3: Overlay Hough lines (if enabled)
-        if show_hough:
+        # Step 3: Overlay Hough lines (if enabled) - CV mode only
+        if show_hough and self.detection_method == 'cv':
             hough_result = self._process_hough_mode(self.latest_frame)
             # Overlay hough lines (magenta lines on black, so we can just add where lines exist)
             mask = np.any(hough_result > 0, axis=2)
@@ -485,18 +497,37 @@ class ZMQWebViewer:
 
         # Step 3.5: Overlay DL segmentation mask (if enabled and available)
         if show_segmentation and self.latest_detection:
-            if (hasattr(self.latest_detection, 'segmentation_mask_base64') and
-                self.latest_detection.segmentation_mask_base64 is not None):
+            has_mask_attr = hasattr(self.latest_detection, 'segmentation_mask_base64')
+            mask_value = getattr(self.latest_detection, 'segmentation_mask_base64', None)
+
+            # Debug: Log once when mask status changes
+            if not hasattr(self, '_last_mask_debug_state'):
+                self._last_mask_debug_state = None
+            current_state = (has_mask_attr, mask_value is not None)
+            if current_state != self._last_mask_debug_state:
+                print(f"[Segmentation Debug] has_attr={has_mask_attr}, mask_is_not_none={mask_value is not None}, detection_method={getattr(self.latest_detection, 'detection_method', 'unknown')}")
+                self._last_mask_debug_state = current_state
+
+            if has_mask_attr and mask_value is not None:
                 try:
                     # Decode base64 PNG to numpy array
                     mask_bytes = base64.b64decode(self.latest_detection.segmentation_mask_base64)
                     mask_array = np.frombuffer(mask_bytes, dtype=np.uint8)
                     seg_mask = cv2.imdecode(mask_array, cv2.IMREAD_GRAYSCALE)
                     if seg_mask is not None:
+                        # Debug: Log mask stats once
+                        if not hasattr(self, '_mask_stats_logged'):
+                            nonzero = np.count_nonzero(seg_mask)
+                            print(f"[Segmentation Debug] Mask decoded: shape={seg_mask.shape}, nonzero={nonzero}, max={seg_mask.max()}")
+                            self._mask_stats_logged = True
                         output = self.visualizer.draw_segmentation(output, seg_mask, alpha=0.35)
+                    else:
+                        # Debug: cv2.imdecode returned None
+                        if not hasattr(self, '_decode_fail_logged'):
+                            print(f"[Segmentation Debug] cv2.imdecode returned None - mask_bytes len={len(mask_bytes)}")
+                            self._decode_fail_logged = True
                 except Exception as e:
-                    if self.verbose:
-                        print(f"[Viewer] Warning: Failed to decode segmentation mask: {e}")
+                    print(f"[Viewer] Warning: Failed to decode segmentation mask: {e}")
 
         # Step 4: Apply lane detection overlays (ROI + detected lanes)
         # This draws on top so actual detection is visible over Canny/Hough
@@ -546,11 +577,19 @@ class ZMQWebViewer:
 
         Modifies output in-place.
 
+        For DL mode: Skip ROI and lane lines since segmentation mask already shows lanes.
+        For CV mode: Draw ROI trapezoid and left/right lane lines.
+
         Args:
             output: Image to apply overlays to
         """
-        # Draw ROI overlay (green trapezoid showing detection area)
-        # Calculate ROI vertices (cached to avoid config loading on every frame)
+        # DL mode: Draw lane contours from segmentation
+        if self.detection_method == 'dl':
+            if self.latest_detection and self.latest_detection.lanes:
+                self._draw_lane_contours(output, self.latest_detection.lanes)
+            return
+
+        # CV mode: Draw ROI overlay (green trapezoid showing detection area)
         try:
             height, width = output.shape[:2]
             current_frame_size = (height, width)
@@ -571,10 +610,9 @@ class ZMQWebViewer:
                 cv2.polylines(output, self.roi_vertices_cache, True, (0, 255, 0), 2)
         except Exception as e:
             print(f"[Viewer] Warning: Failed to draw ROI overlay: {e}")
-            # If ROI drawing fails, continue without it
             pass
 
-        # Draw lane overlays if detection available
+        # CV mode: Draw lane lines if detection available
         if self.latest_detection:
             left_lane = None
             right_lane = None
@@ -591,6 +629,33 @@ class ZMQWebViewer:
             modified = self.visualizer.draw_lanes(output, left_lane, right_lane, fill_lane=True)
             # Copy result back to output array
             np.copyto(output, modified)
+
+    def _draw_lane_contours(self, output: np.ndarray, lanes: list):
+        """
+        Draw multiple lane contours from DL detection.
+
+        Args:
+            output: Image to draw on (modified in-place)
+            lanes: List of lane contour dicts with 'points', 'class_id', 'confidence'
+        """
+        # Transparent blue color for all lane classes (RGB format)
+        blue_color = (70, 130, 255)  # Light blue
+
+        for lane in lanes:
+            points = lane.get('points', [])
+            confidence = lane.get('confidence', 1.0)
+
+            if len(points) < 2:
+                continue
+
+            # Convert points to numpy array for drawing
+            pts = np.array(points, dtype=np.int32)
+
+            # Draw filled polygon with transparency (no border)
+            overlay = output.copy()
+            cv2.fillPoly(overlay, [pts], blue_color)
+            alpha = 0.35 * confidence  # Transparent blend based on confidence
+            cv2.addWeighted(overlay, alpha, output, 1 - alpha, 0, output)
 
     def _draw_hud_overlay(self, output: np.ndarray):
         """
@@ -806,6 +871,10 @@ class ZMQWebViewer:
         # Add detection metrics if available
         if self.latest_detection:
             status_data['detection_time_ms'] = self.latest_detection.processing_time_ms
+            # Add lane metrics for HUD panel
+            status_data['departure_status'] = self.latest_detection.departure_status or 'no_lanes'
+            status_data['lateral_offset_m'] = self.latest_detection.lateral_offset_meters
+            status_data['heading_angle_deg'] = self.latest_detection.heading_angle_deg
 
         message = json.dumps(status_data)
         self._broadcast_ws(message)
@@ -1212,10 +1281,14 @@ class ZMQWebViewer:
                 # Substitute dynamic values
                 # Hide respawn button for real vehicle (only applicable for simulation)
                 respawn_display = "inline-block" if viewer_self.target == "simulation" else "none"
+                # Hide CV-specific controls in DL mode
+                cv_display = "block" if viewer_self.detection_method == "cv" else "none"
                 return template.format(
                     vehicle_url=viewer_self.vehicle_url,
                     target=viewer_self.target.upper(),
+                    detection_method=viewer_self.detection_method.upper(),
                     respawn_display=respawn_display,
+                    cv_display=cv_display,
                     # ROI parameters
                     roi_bottom_left_x=viewer_self.roi_config['roi_bottom_left_x'],
                     roi_top_left_x=viewer_self.roi_config['roi_top_left_x'],

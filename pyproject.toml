@@ -19,8 +19,8 @@ keywords = [
 
 # Core dependencies
 dependencies = [
-    # Numerical Computing
-    "numpy>=1.24.0,<3.0.0",
+    # Numerical Computing (pinned <2 for PyTorch compatibility on Jetson)
+    "numpy>=1.24.0,<2.0.0",
 
     # Computer Vision (for visualization)
     "opencv-python>=4.8.0,<5.0.0",

@@ -24,9 +24,14 @@
             max-width: 1200px;
             width: 100%;
         }}
+        .stream-section {{
+            display: flex;
+            gap: 20px;
+            width: 100%;
+        }}
         .video-container {{
             position: relative;
-            width: 100%;
+            flex: 1;
             background: #000;
             border-radius: 8px;
             overflow: hidden;
@@ -36,6 +41,70 @@
             width: 100%;
             height: auto;
             display: block;
+        }}
+        .hud-panel {{
+            width: 280px;
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }}
+        .hud-panel h3 {{
+            margin: 0;
+            font-size: 14px;
+            color: #2196F3;
+            border-bottom: 1px solid #4a4a4a;
+            padding-bottom: 8px;
+        }}
+        .hud-item {{
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+        }}
+        .hud-item .label {{
+            color: #888;
+        }}
+        .hud-item .value {{
+            font-family: monospace;
+            color: #4CAF50;
+        }}
+        .hud-item .value.warning {{
+            color: #FF9800;
+        }}
+        .hud-item .value.danger {{
+            color: #f44336;
+        }}
+        .hud-group {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }}
+        .steering-indicator {{
+            width: 100%;
+            height: 30px;
+            background: #1e1e1e;
+            border-radius: 4px;
+            position: relative;
+            overflow: hidden;
+        }}
+        .steering-indicator .center-line {{
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #666;
+        }}
+        .steering-indicator .needle {{
+            position: absolute;
+            top: 5px;
+            bottom: 5px;
+            width: 4px;
+            background: #4CAF50;
+            border-radius: 2px;
+            transition: left 0.1s ease-out;
         }}
         .controls {{
             margin-top: 20px;
@@ -213,9 +282,65 @@
 </head>
 <body>
     <div class="container">
-        <h1>🚗 Lane Detection Viewer <span class="badge" id="modeBadge">{target}</span></h1>
-        <div class="video-container">
-            <img id="videoStream" src="" alt="Lane Detection Stream">
+        <h1>🚗 Lane Detection Viewer <span class="badge" id="modeBadge">{target}</span> <span class="badge" style="background: #9C27B0;">{detection_method}</span></h1>
+        <div class="stream-section">
+            <div class="video-container">
+                <canvas id="videoCanvas" style="width: 100%; height: auto;"></canvas>
+            </div>
+            <div class="hud-panel">
+                <div class="hud-group">
+                    <h3>🚗 Vehicle Status</h3>
+                    <div class="hud-item">
+                        <span class="label">Speed</span>
+                        <span class="value" id="hudSpeed">-- km/h</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Throttle</span>
+                        <span class="value" id="hudThrottle">--</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Brake</span>
+                        <span class="value" id="hudBrake">--</span>
+                    </div>
+                </div>
+                <div class="hud-group">
+                    <h3>🎮 Steering</h3>
+                    <div class="steering-indicator">
+                        <div class="center-line"></div>
+                        <div class="needle" id="steeringNeedle"></div>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Value</span>
+                        <span class="value" id="hudSteering">0.00</span>
+                    </div>
+                </div>
+                <div class="hud-group">
+                    <h3>🛣️ Lane Status</h3>
+                    <div class="hud-item">
+                        <span class="label">Status</span>
+                        <span class="value" id="hudLaneStatus">--</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Offset</span>
+                        <span class="value" id="hudOffset">-- m</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Heading</span>
+                        <span class="value" id="hudHeading">-- deg</span>
+                    </div>
+                </div>
+                <div class="hud-group">
+                    <h3>⚡ Performance</h3>
+                    <div class="hud-item">
+                        <span class="label">Detection</span>
+                        <span class="value" id="hudDetectionTime">-- ms</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Stream FPS</span>
+                        <span class="value" id="hudFps">--</span>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="controls">
             <button class="btn primary" id="respawnBtn" onclick="sendAction('respawn')" style="display: {respawn_display};">🔄 Respawn Vehicle</button>
@@ -227,14 +352,15 @@
             <div class="toggle-buttons">
                 <button class="toggle-btn" id="rawImageToggle" onclick="toggleRawImage()">📷 Raw Image: ON</button>
                 <button class="toggle-btn" id="lanesToggle" onclick="toggleLanes()">🛣️ Lanes: ON</button>
-                <button class="toggle-btn off" id="cannyToggle" onclick="toggleCanny()">⚪ Canny: OFF</button>
-                <button class="toggle-btn off" id="houghToggle" onclick="toggleHough()">🔴 Hough: OFF</button>
+                <button class="toggle-btn off" id="cannyToggle" onclick="toggleCanny()" style="display: {cv_display};">⚪ Canny: OFF</button>
+                <button class="toggle-btn off" id="houghToggle" onclick="toggleHough()" style="display: {cv_display};">🔴 Hough: OFF</button>
                 <button class="toggle-btn" id="hudToggle" onclick="toggleHUD()">📊 HUD: ON</button>
+                <button class="toggle-btn" id="segmentationToggle" onclick="toggleSegmentation()">🔵 Segmentation: ON</button>
             </div>
         </div>
         <div class="info">
             <div class="info-item">
-                <strong>Target:</strong> {target} | <strong>Mode:</strong> WebSocket Real-Time Streaming
+                <strong>Target:</strong> {target} | <strong>Detection:</strong> {detection_method} | <strong>Mode:</strong> WebSocket Real-Time Streaming
             </div>
             <div class="info-item">
                 <strong>Connection:</strong> <span id="wsStatus" style="color: #FF9800;">Connecting...</span>
@@ -254,8 +380,8 @@
         </div>
 
         <div class="params-container">
-            <div class="param-section">
-                <h3>🔍 Detection Parameters</h3>
+            <div class="param-section" style="display: {cv_display};">
+                <h3>🔍 CV Detection Parameters</h3>
                 <div class="param-control">
                     <label>Canny Low Threshold</label>
                     <input type="range" id="canny_low" min="1" max="150" value="{canny_low}" step="1"
@@ -345,7 +471,7 @@
             </div>
         </div>
 
-        <div class="params-container">
+        <div class="params-container" style="display: {cv_display};">
             <div class="param-section">
                 <h3>📐 ROI (Region of Interest) Parameters</h3>
                 <div class="param-control">
@@ -398,9 +524,65 @@
         let lastFrameTime = Date.now();
         let fpsInterval = null;
 
+        // Canvas rendering for low-latency display
+        const canvas = document.getElementById('videoCanvas');
+        const ctx = canvas.getContext('2d');
+        let canvasInitialized = false;
+
+        // Frame queue for smooth rendering (prevents frame buildup)
+        let latestFrame = null;
+        let frameProcessing = false;
+        let pendingRender = false;
+
         // Get WebSocket URL (HTTP port + 1)
         const wsPort = parseInt(window.location.port || 8080) + 1;
         const wsUrl = `ws://${{window.location.hostname}}:${{wsPort}}`;
+
+        // Render the latest frame to canvas
+        function renderLatestFrame() {{
+            pendingRender = false;
+
+            if (!latestFrame || frameProcessing) {{
+                return;
+            }}
+
+            frameProcessing = true;
+            const frameToRender = latestFrame;
+            latestFrame = null;  // Clear so we render the latest when next frame arrives
+
+            // Decode and render
+            createImageBitmap(frameToRender).then(function(bitmap) {{
+                // Initialize canvas size on first frame or size change
+                if (!canvasInitialized || canvas.width !== bitmap.width || canvas.height !== bitmap.height) {{
+                    canvas.width = bitmap.width;
+                    canvas.height = bitmap.height;
+                    canvasInitialized = true;
+                }}
+
+                // Draw directly to canvas
+                ctx.drawImage(bitmap, 0, 0);
+                bitmap.close();  // Free memory
+
+                // Latency calculation
+                const now = Date.now();
+                if (window.lastFrameReceived) {{
+                    const latency = now - window.lastFrameReceived;
+                    document.getElementById('latencyDisplay').textContent = latency.toFixed(0);
+                }}
+                window.lastFrameReceived = now;
+
+                frameProcessing = false;
+
+                // If new frame arrived during processing, render it
+                if (latestFrame && !pendingRender) {{
+                    pendingRender = true;
+                    requestAnimationFrame(renderLatestFrame);
+                }}
+            }}).catch(function(err) {{
+                console.error('Failed to decode frame:', err);
+                frameProcessing = false;
+            }});
+        }}
 
         function connectWebSocket() {{
             console.log('Connecting to WebSocket:', wsUrl);
@@ -425,28 +607,18 @@
             ws.onmessage = function(event) {{
                 // Check if binary (frame) or text (status)
                 if (event.data instanceof Blob) {{
-                    // Binary frame data
-                    const img = document.getElementById('videoStream');
-                    const url = URL.createObjectURL(event.data);
+                    // Store latest frame blob - always keep only the newest
+                    // This prevents frame queue buildup
+                    latestFrame = event.data;
 
-                    // Clean up old URL
-                    if (img.src && img.src.startsWith('blob:')) {{
-                        URL.revokeObjectURL(img.src);
-                    }}
-
-                    img.src = url;
-
-                    // Update FPS counter
+                    // Update FPS counter for received frames
                     frameCount++;
 
-                    // Latency calculation (approximate, no timestamp in binary)
-                    const now = Date.now();
-                    if (window.lastFrameReceived) {{
-                        const latency = now - window.lastFrameReceived;
-                        document.getElementById('latencyDisplay').textContent = latency.toFixed(0);
+                    // Request render on next animation frame (if not already pending)
+                    if (!pendingRender) {{
+                        pendingRender = true;
+                        requestAnimationFrame(renderLatestFrame);
                     }}
-                    window.lastFrameReceived = now;
-
                 }} else {{
                     // Text message (status)
                     try {{
@@ -463,7 +635,7 @@
                                     stateElem.style.color = '#4CAF50';
                                 }}
 
-                                // Update vehicle telemetry displays
+                                // Update vehicle telemetry displays (footer)
                                 if (msg.speed_kmh !== undefined) {{
                                     document.getElementById('speedDisplay').textContent = msg.speed_kmh.toFixed(1);
                                 }}
@@ -473,20 +645,77 @@
                                 if (msg.brake !== undefined) {{
                                     const brakeElem = document.getElementById('brakeDisplay');
                                     brakeElem.textContent = msg.brake.toFixed(2);
-                                    // Highlight brake when active
                                     brakeElem.style.color = msg.brake > 0.1 ? '#f44336' : '#888';
+                                }}
+
+                                // Update HUD panel
+                                if (msg.speed_kmh !== undefined) {{
+                                    document.getElementById('hudSpeed').textContent = msg.speed_kmh.toFixed(1) + ' km/h';
+                                }}
+                                if (msg.throttle !== undefined) {{
+                                    document.getElementById('hudThrottle').textContent = msg.throttle.toFixed(2);
+                                }}
+                                if (msg.brake !== undefined) {{
+                                    const hudBrake = document.getElementById('hudBrake');
+                                    hudBrake.textContent = msg.brake.toFixed(2);
+                                    hudBrake.className = msg.brake > 0.1 ? 'value danger' : 'value';
+                                }}
+                                if (msg.steering !== undefined) {{
+                                    const steerVal = msg.steering.toFixed(2);
+                                    document.getElementById('hudSteering').textContent = steerVal;
+                                    // Update steering needle position (steering -1 to 1 -> 10% to 90%)
+                                    const needlePos = 50 + (msg.steering * 40);
+                                    document.getElementById('steeringNeedle').style.left = needlePos + '%';
+                                    // Color based on steering magnitude
+                                    const needle = document.getElementById('steeringNeedle');
+                                    if (Math.abs(msg.steering) < 0.3) {{
+                                        needle.style.background = '#4CAF50';
+                                    }} else if (Math.abs(msg.steering) < 0.6) {{
+                                        needle.style.background = '#FF9800';
+                                    }} else {{
+                                        needle.style.background = '#f44336';
+                                    }}
+                                }}
+                            }}
+
+                            // Update lane metrics in HUD
+                            if (msg.departure_status !== undefined) {{
+                                const statusElem = document.getElementById('hudLaneStatus');
+                                statusElem.textContent = msg.departure_status.toUpperCase();
+                                // Color based on status
+                                if (msg.departure_status === 'centered') {{
+                                    statusElem.className = 'value';
+                                }} else if (msg.departure_status.includes('drift')) {{
+                                    statusElem.className = 'value warning';
+                                }} else if (msg.departure_status.includes('departure')) {{
+                                    statusElem.className = 'value danger';
+                                }} else {{
+                                    statusElem.className = 'value';
+                                }}
+                            }}
+                            if (msg.lateral_offset_m !== undefined && msg.lateral_offset_m !== null) {{
+                                const direction = msg.lateral_offset_m > 0 ? 'R' : 'L';
+                                document.getElementById('hudOffset').textContent = Math.abs(msg.lateral_offset_m).toFixed(2) + 'm ' + direction;
+                            }}
+                            if (msg.heading_angle_deg !== undefined && msg.heading_angle_deg !== null) {{
+                                document.getElementById('hudHeading').textContent = msg.heading_angle_deg.toFixed(1) + ' deg';
+                            }}
+                            if (msg.detection_time_ms !== undefined) {{
+                                const detElem = document.getElementById('hudDetectionTime');
+                                detElem.textContent = msg.detection_time_ms.toFixed(1) + ' ms';
+                                // Color based on detection time
+                                if (msg.detection_time_ms < 50) {{
+                                    detElem.className = 'value';
+                                }} else if (msg.detection_time_ms < 100) {{
+                                    detElem.className = 'value warning';
+                                }} else {{
+                                    detElem.className = 'value danger';
                                 }}
                             }}
 
                             // Always update button state from paused field
-                            // paused can be true, false, or undefined/null
                             if (msg.paused !== undefined && msg.paused !== null) {{
                                 updateButtonState(msg.paused);
-                            }}
-
-                            // Debug: log state info
-                            if (msg.steering !== undefined) {{
-                                console.log('Vehicle state: steering=' + msg.steering.toFixed(3) + ', paused=' + msg.paused);
                             }}
                         }}
                     }} catch (e) {{
@@ -528,6 +757,7 @@
                 const fps = frameCount / elapsed;
 
                 document.getElementById('fpsDisplay').textContent = fps.toFixed(1);
+                document.getElementById('hudFps').textContent = fps.toFixed(1);
 
                 // Reset counter
                 frameCount = 0;
@@ -626,12 +856,13 @@
             showNotification('System reset: Vehicle paused, steering zeroed, all state cleared');
         }}
 
-        // Toggle states (default: raw image, lanes, and HUD ON; canny and hough OFF)
+        // Toggle states (default: raw image, lanes, HUD, and segmentation ON; canny and hough OFF)
         let rawImageEnabled = true;
         let lanesEnabled = true;
         let cannyEnabled = false;
         let houghEnabled = false;
         let hudEnabled = true;
+        let segmentationEnabled = true;
 
         function toggleRawImage() {{
             rawImageEnabled = !rawImageEnabled;
@@ -741,6 +972,28 @@
             }});
 
             showNotification('HUD: ' + (hudEnabled ? 'ON' : 'OFF'));
+        }}
+
+        function toggleSegmentation() {{
+            segmentationEnabled = !segmentationEnabled;
+            const btn = document.getElementById('segmentationToggle');
+
+            if (segmentationEnabled) {{
+                btn.textContent = '🔵 Segmentation: ON';
+                btn.classList.remove('off');
+            }} else {{
+                btn.textContent = '🔵 Segmentation: OFF';
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'segmentation',
+                enabled: segmentationEnabled
+            }});
+
+            showNotification('Segmentation: ' + (segmentationEnabled ? 'ON' : 'OFF'));
         }}
 
         function showNotification(message, isError = false) {{
