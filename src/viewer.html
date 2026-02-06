@@ -421,24 +421,30 @@
             </div>
 
             <div class="param-section">
-                <h3>🎯 Decision (PID Control) Parameters</h3>
+                <h3>🎯 Decision ({controller_label}) Parameters</h3>
                 <div class="param-control">
-                    <label>Kp (Proportional Gain)</label>
-                    <input type="range" id="kp" min="0" max="2" value="0.5" step="0.05"
+                    <label>{kp_label}</label>
+                    <input type="range" id="kp" min="0" max="2" value="{kp_value}" step="0.05"
                            oninput="updateParam('decision', 'kp', this.value)">
-                    <span class="param-value" id="kp_val">0.50</span>
+                    <span class="param-value" id="kp_val">{kp_value:.2f}</span>
                 </div>
-                <div class="param-control">
+                <div class="param-control" style="display: {ki_display};">
                     <label>Ki (Integral Gain)</label>
-                    <input type="range" id="ki" min="0" max="0.5" value="0.01" step="0.005"
+                    <input type="range" id="ki" min="0" max="0.5" value="{ki_value}" step="0.005"
                            oninput="updateParam('decision', 'ki', this.value)">
-                    <span class="param-value" id="ki_val">0.01</span>
+                    <span class="param-value" id="ki_val">{ki_value:.3f}</span>
                 </div>
                 <div class="param-control">
-                    <label>Kd (Derivative Gain)</label>
-                    <input type="range" id="kd" min="0" max="1" value="0.1" step="0.05"
+                    <label>{kd_label}</label>
+                    <input type="range" id="kd" min="0" max="1" value="{kd_value}" step="0.05"
                            oninput="updateParam('decision', 'kd', this.value)">
-                    <span class="param-value" id="kd_val">0.10</span>
+                    <span class="param-value" id="kd_val">{kd_value:.2f}</span>
+                </div>
+                <div class="param-control" style="display: {lookahead_display};">
+                    <label>Lookahead Ratio</label>
+                    <input type="range" id="lookahead_ratio" min="0.1" max="0.8" value="{lookahead_ratio}" step="0.05"
+                           oninput="updateParam('decision', 'lookahead_ratio', this.value)">
+                    <span class="param-value" id="lookahead_ratio_val">{lookahead_ratio:.2f}</span>
                 </div>
                 <div class="param-control">
                     <label>Base Throttle</label>
@@ -791,7 +797,7 @@
                 if (parameter.includes('throttle') || parameter.includes('kp') ||
                     parameter.includes('ki') || parameter.includes('kd') ||
                     parameter.includes('steer') || parameter.includes('smoothing') ||
-                    parameter.includes('roi')) {{
+                    parameter.includes('roi') || parameter.includes('lookahead')) {{
                     displayElem.textContent = parseFloat(value).toFixed(2);
                 }} else {{
                     displayElem.textContent = Math.round(value);

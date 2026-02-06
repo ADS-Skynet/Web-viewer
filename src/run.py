@@ -531,10 +531,15 @@ class ZMQWebViewer:
             except Exception as e:
                 print(f"[Viewer] Warning: Failed to decode segmentation mask: {e}")
 
-        # Step 4: Apply lane detection overlays (ROI + detected lanes)
+        # Step 4: Apply lane detection overlays (ROI + detected lanes for CV, contours for DL)
         # This draws on top so actual detection is visible over Canny/Hough
-        # if show_lanes:
-        #     self._apply_normal_overlays(output)
+        if show_lanes:
+            try:
+                self._apply_normal_overlays(output)
+            except Exception as e:
+                if not hasattr(self, '_overlay_error_logged'):
+                    print(f"[Viewer] Warning: Lane overlay failed: {e}")
+                    self._overlay_error_logged = True
 
         # Step 5: Add HUD on top of everything (if enabled)
         if show_hud:
@@ -585,10 +590,13 @@ class ZMQWebViewer:
         Args:
             output: Image to apply overlays to
         """
-        # DL mode: Draw lane contours from segmentation
+        # DL mode: Draw lane contours from segmentation + polynomial debug overlay
         if self.detection_method == 'dl':
             if self.latest_detection and self.latest_detection.lanes:
                 self._draw_lane_contours(output, self.latest_detection.lanes)
+            # Draw polynomial debug overlay (center line + lane boundaries)
+            if self.latest_detection:
+                self._draw_poly_overlay(output, self.latest_detection)
             return
 
         # CV mode: Draw ROI overlay (green trapezoid showing detection area)
@@ -655,9 +663,75 @@ class ZMQWebViewer:
 
             # Draw filled polygon with transparency (no border)
             overlay = output.copy()
-            # cv2.fillPoly(img=overlay, pts=[pts], color=blue_color)
+            cv2.fillPoly(img=overlay, pts=[pts], color=blue_color)
             alpha = 0.35 * confidence  # Transparent blend based on confidence
             cv2.addWeighted(overlay, alpha, output, 1 - alpha, 0, output)
+
+    def _draw_poly_overlay(self, output: np.ndarray, detection):
+        """
+        Draw polynomial debug overlay showing what the decision module sees.
+
+        Draws fitted lane boundary polynomials (left/right) and the center
+        path that the controller follows. Each polynomial is x = ay^2 + by + c.
+
+        Colors:
+            - Left boundary: Blue
+            - Right boundary: Red
+            - Center path: Yellow (thicker, dashed)
+
+        Args:
+            output: Image to draw on (modified in-place)
+            detection: DetectionData with left_poly, right_poly, center_poly
+        """
+        height, width = output.shape[:2]
+        y_start = height - 1
+        y_end = int(height * 0.4)  # Draw from bottom to ~40% up (ROI area)
+        y_values = np.arange(y_start, y_end, -2)  # Sample every 2 pixels
+
+        def eval_poly(coeffs, y_vals):
+            """Evaluate polynomial x = a*y^2 + b*y + c."""
+            a, b, c = coeffs
+            return a * y_vals**2 + b * y_vals + c
+
+        def draw_polyline(coeffs, color, thickness=2):
+            """Draw a polynomial curve on the output image."""
+            x_vals = eval_poly(coeffs, y_values.astype(np.float64))
+            # Clip to image bounds
+            valid = (x_vals >= 0) & (x_vals < width)
+            if not np.any(valid):
+                return
+            pts = np.column_stack([
+                x_vals[valid].astype(np.int32),
+                y_values[valid].astype(np.int32)
+            ])
+            if len(pts) < 2:
+                return
+            cv2.polylines(output, [pts], isClosed=False, color=color, thickness=thickness)
+
+        # Draw left boundary (blue)
+        left_poly = getattr(detection, 'left_poly', None)
+        if left_poly:
+            draw_polyline(left_poly, color=(255, 100, 100), thickness=2)
+
+        # Draw right boundary (red)
+        right_poly = getattr(detection, 'right_poly', None)
+        if right_poly:
+            draw_polyline(right_poly, color=(100, 100, 255), thickness=2)
+
+        # Draw center path (yellow, thicker)
+        center_poly = getattr(detection, 'center_poly', None)
+        if center_poly:
+            draw_polyline(center_poly, color=(0, 255, 255), thickness=3)
+
+            # Draw lookahead point marker
+            lookahead_y = int(height * (1 - 0.4))  # 40% up from bottom
+            lookahead_x = eval_poly(center_poly, float(lookahead_y))
+            if 0 <= lookahead_x < width:
+                cv2.circle(output, (int(lookahead_x), lookahead_y), 6, (0, 255, 255), -1)
+
+            # Draw vehicle center reference line (thin white vertical)
+            cx = width // 2
+            cv2.line(output, (cx, height - 1), (cx, y_end), (255, 255, 255), 1)
 
     def _draw_hud_overlay(self, output: np.ndarray):
         """
@@ -1206,11 +1280,21 @@ class ZMQWebViewer:
             def do_GET(self):
                 if self.path == '/':
                     # Serve HTML page
-                    self.send_response(200)
-                    self.send_header('Content-type', 'text/html')
-                    self.end_headers()
-                    html = self._get_html()
-                    self.wfile.write(html.encode())
+                    try:
+                        html = self._get_html()
+                        self.send_response(200)
+                        self.send_header('Content-type', 'text/html')
+                        self.send_header('Content-Length', str(len(html.encode())))
+                        self.end_headers()
+                        self.wfile.write(html.encode())
+                    except Exception as e:
+                        import traceback
+                        error_msg = f"Failed to render viewer page: {e}\n{traceback.format_exc()}"
+                        print(f"[HTTP] ERROR: {error_msg}")
+                        self.send_response(500)
+                        self.send_header('Content-type', 'text/plain')
+                        self.end_headers()
+                        self.wfile.write(error_msg.encode())
 
                 elif self.path == '/stream':
                     # Serve MJPEG stream
@@ -1285,6 +1369,20 @@ class ZMQWebViewer:
                 respawn_display = "inline-block" if viewer_self.target == "simulation" else "none"
                 # Hide CV-specific controls in DL mode
                 cv_display = "block" if viewer_self.detection_method == "cv" else "none"
+
+                # Controller-specific template variables
+                config = ConfigManager.load()
+                ctrl_method = config.controller.method.lower()
+                ctrl_labels = {
+                    'pid': ('PID Control', 'Kp (Proportional Gain)', 'Kd (Derivative Gain)'),
+                    'pd': ('PD Control', 'Kp (Proportional Gain)', 'Kd (Derivative Gain)'),
+                    'pure_pursuit': ('Pure Pursuit', 'Gain (Steering)', 'Heading Gain'),
+                    'mpc': ('MPC Control', 'Q Lateral', 'Q Heading'),
+                }
+                controller_label, kp_label, kd_label = ctrl_labels.get(
+                    ctrl_method, ('PID Control', 'Kp (Proportional Gain)', 'Kd (Derivative Gain)')
+                )
+
                 return template.format(
                     vehicle_url=viewer_self.vehicle_url,
                     target=viewer_self.target.upper(),
@@ -1305,7 +1403,17 @@ class ZMQWebViewer:
                     hough_max_line_gap=viewer_self.hough_max_line_gap,
                     smoothing_factor=viewer_self.smoothing_factor,
                     # Throttle policy
-                    throttle_base=ConfigManager.load().throttle_policy.base
+                    throttle_base=config.throttle_policy.base,
+                    # Controller parameters (dynamic per controller type)
+                    controller_label=controller_label,
+                    kp_label=kp_label,
+                    kd_label=kd_label,
+                    kp_value=config.controller.kp,
+                    ki_value=config.controller.ki,
+                    kd_value=config.controller.kd,
+                    ki_display="block" if ctrl_method == "pid" else "none",
+                    lookahead_display="block" if ctrl_method == "pure_pursuit" else "none",
+                    lookahead_ratio=config.controller.lookahead_ratio,
                 )
 
         # Start HTTP server with error handling wrapper
