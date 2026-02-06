@@ -247,10 +247,12 @@ class ZMQWebViewer:
 
         # Calculate latency for logging (only if verbose)
         if self.verbose:
+            frame_id = metadata.get('frame_id', 'N/A')
             frame_timestamp = metadata.get('timestamp', 0)
             current_time = time.time()
             latency_ms = (current_time - frame_timestamp) * 1000 if frame_timestamp > 0 else 0
-            print(f"[Frame] Received frame {metadata.get('frame_id', 'N/A')} | Latency: {latency_ms:.1f}ms | Decode: {metadata.get('decode_time_ms', 0):.1f}ms")
+            if frame_id % 30 == 0:  # Log every 30 frames to reduce clutter
+                print(f"[Frame] Received frame {frame_id} | Latency: {latency_ms:.1f}ms | Decode: {metadata.get('decode_time_ms', 0):.1f}ms")
 
         # Signal render thread that new frame is ready
         # If render is still in progress, this frame will be dropped and we'll render the latest
@@ -274,8 +276,8 @@ class ZMQWebViewer:
         """Called when vehicle state received."""
         self.latest_state = state
         # Debug: Log when state is received (especially paused status)
-        if state.paused is not None and self.verbose:
-            print(f"[State] Received: paused={state.paused}, steering={state.steering:.3f}")
+        # if state.paused is not None and self.verbose:
+        #     print(f"[State] Received: paused={state.paused}, steering={state.steering:.3f}")
         # DON'T render here - wait for next frame
         # This prevents duplicate rendering which was causing lag
 
