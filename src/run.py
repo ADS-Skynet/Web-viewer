@@ -982,6 +982,10 @@ class ZMQWebViewer:
     def _broadcast_ws_binary(self, data: bytes):
         """
         Broadcast binary data to all WebSocket clients.
+
+        Uses per-client send tracking to prevent queue buildup:
+        if the previous frame hasn't been sent yet, skip this frame
+        for that client. The next render cycle will send the latest frame.
         """
         # Check if WebSocket loop is ready
         if not hasattr(self, 'ws_loop') or self.ws_loop is None:
@@ -989,20 +993,33 @@ class ZMQWebViewer:
                 print("[WebSocket] Warning: ws_loop not ready, skipping frame broadcast")
             return
 
+        # Initialize per-client send tracking
+        if not hasattr(self, '_ws_send_futures'):
+            self._ws_send_futures = {}
+
         with self.ws_lock:
             dead_clients = set()
             for client in self.ws_clients:
                 try:
-                    # Send frame to client
-                    asyncio.run_coroutine_threadsafe(
+                    # Skip if previous frame send is still in progress
+                    client_id = id(client)
+                    prev_future = self._ws_send_futures.get(client_id)
+                    if prev_future is not None and not prev_future.done():
+                        continue  # Drop this frame for this client, next cycle sends latest
+
+                    # Schedule send (non-blocking)
+                    future = asyncio.run_coroutine_threadsafe(
                         client.send(data),
                         self.ws_loop
                     )
+                    self._ws_send_futures[client_id] = future
                 except Exception:
                     # Mark client for removal
                     dead_clients.add(client)
 
-            # Remove dead clients
+            # Remove dead clients and their futures
+            for client in dead_clients:
+                self._ws_send_futures.pop(id(client), None)
             self.ws_clients -= dead_clients
 
     async def _ws_handler(self, websocket):
@@ -1103,9 +1120,12 @@ class ZMQWebViewer:
         except websockets.exceptions.ConnectionClosed:
             pass
         finally:
-            # Unregister client
+            # Unregister client and clean up send tracking
+            client_id = id(websocket)
             with self.ws_lock:
                 self.ws_clients.discard(websocket)
+            if hasattr(self, '_ws_send_futures'):
+                self._ws_send_futures.pop(client_id, None)
             print(f"[WebSocket] Client disconnected: {client_addr}")
 
     def _run_ws_server(self):
