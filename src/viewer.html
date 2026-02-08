@@ -447,6 +447,12 @@
                     <span class="param-value" id="lookahead_ratio_val">{lookahead_ratio:.2f}</span>
                 </div>
                 <div class="param-control">
+                    <label>Camera Offset X</label>
+                    <input type="range" id="camera_offset_x" min="-200" max="200" value="{camera_offset_x}" step="5"
+                           oninput="updateParam('decision', 'camera_offset_x', this.value)">
+                    <span class="param-value" id="camera_offset_x_val">{camera_offset_x}</span>
+                </div>
+                <div class="param-control">
                     <label>Base Throttle</label>
                     <input type="range" id="throttle_base" min="0" max="0.5" value="{throttle_base}" step="0.01"
                            oninput="updateParam('decision', 'throttle_base', this.value)">

@@ -170,6 +170,7 @@ class ZMQWebViewer:
         self.hough_rho = config.cv_detector.hough_rho
         self.hough_theta = config.cv_detector.hough_theta
         self.smoothing_factor = config.cv_detector.smoothing_factor
+        self.camera_offset_x = config.camera.offset_x
 
         self.running = False
 
@@ -732,7 +733,8 @@ class ZMQWebViewer:
                 cv2.circle(output, (int(lookahead_x), lookahead_y), 6, (0, 255, 255), -1)
 
             # Draw vehicle center reference line (thin white vertical)
-            cx = width // 2
+            # Adjusted by camera_offset_x to show actual vehicle center
+            cx = width // 2 + self.camera_offset_x
             cv2.line(output, (cx, height - 1), (cx, y_end), (255, 255, 255), 1)
 
     def _draw_hud_overlay(self, output: np.ndarray):
@@ -1071,6 +1073,8 @@ class ZMQWebViewer:
                             self.hough_max_line_gap = int(value)
                         elif parameter == 'smoothing_factor':
                             self.smoothing_factor = float(value)
+                        elif parameter == 'camera_offset_x':
+                            self.camera_offset_x = int(value)
 
                         if self.verbose and parameter in ['canny_low', 'canny_high', 'hough_threshold',
                                                            'hough_min_line_len', 'hough_max_line_gap',
@@ -1267,6 +1271,8 @@ class ZMQWebViewer:
                             viewer_self.hough_max_line_gap = int(value)
                         elif parameter == 'smoothing_factor':
                             viewer_self.smoothing_factor = float(value)
+                        elif parameter == 'camera_offset_x':
+                            viewer_self.camera_offset_x = int(value)
 
                         if viewer_self.verbose and parameter in ['canny_low', 'canny_high', 'hough_threshold',
                                                                   'hough_min_line_len', 'hough_max_line_gap',
@@ -1436,6 +1442,7 @@ class ZMQWebViewer:
                     ki_display="block" if ctrl_method == "pid" else "none",
                     lookahead_display="block" if ctrl_method == "pure_pursuit" else "none",
                     lookahead_ratio=config.controller.lookahead_ratio,
+                    camera_offset_x=config.camera.offset_x,
                 )
 
         # Start HTTP server with error handling wrapper
@@ -1550,7 +1557,7 @@ def main():
     # Build URLs from preset (or override with explicit args)
     vehicle_url = args.vehicle or f"tcp://{broadcast_host}:{broadcast_port}"
     action_url = args.actions or f"tcp://{broadcast_host}:{action_port}"
-    param_url = args.parameters or f"tcp://*:{parameter_port}"
+    param_url = args.parameters or f"tcp://{broadcast_host}:{parameter_port}"
 
     # Determine mode: LKAS mode (connect to broker) is default
     lkas_mode = not args.simulation_mode
