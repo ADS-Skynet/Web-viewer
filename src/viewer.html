@@ -453,6 +453,12 @@
                     <span class="param-value" id="camera_offset_x_val">{camera_offset_x}</span>
                 </div>
                 <div class="param-control">
+                    <label>Lane Confidence</label>
+                    <input type="range" id="min_confidence" min="0" max="0.8" value="0.30" step="0.05"
+                           oninput="updateParam('decision', 'min_confidence', this.value)">
+                    <span class="param-value" id="min_confidence_val">0.30</span>
+                </div>
+                <div class="param-control">
                     <label>Base Throttle</label>
                     <input type="range" id="throttle_base" min="0" max="0.5" value="{throttle_base}" step="0.01"
                            oninput="updateParam('decision', 'throttle_base', this.value)">
