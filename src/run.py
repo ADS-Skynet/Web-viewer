@@ -711,15 +711,30 @@ class ZMQWebViewer:
                 return
             cv2.polylines(output, [pts], isClosed=False, color=color, thickness=thickness)
 
-        # Draw left boundary (blue)
+        # Get confidence scores
+        left_conf = getattr(detection, 'left_confidence', 0.0)
+        right_conf = getattr(detection, 'right_confidence', 0.0)
+
+        # Draw left boundary (blue) with confidence label
         left_poly = getattr(detection, 'left_poly', None)
         if left_poly:
             draw_polyline(left_poly, color=(255, 100, 100), thickness=2)
+        # Show confidence near top of left boundary
+        if left_conf > 0:
+            lx = int(eval_poly(left_poly, float(y_end + 20))) if left_poly else 40
+            lx = max(5, min(width - 80, lx))
+            cv2.putText(output, f"L:{left_conf:.2f}", (lx, y_end + 15),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 100, 100), 1)
 
-        # Draw right boundary (red)
+        # Draw right boundary (red) with confidence label
         right_poly = getattr(detection, 'right_poly', None)
         if right_poly:
             draw_polyline(right_poly, color=(100, 100, 255), thickness=2)
+        if right_conf > 0:
+            rx = int(eval_poly(right_poly, float(y_end + 20))) if right_poly else width - 80
+            rx = max(5, min(width - 80, rx))
+            cv2.putText(output, f"R:{right_conf:.2f}", (rx, y_end + 15),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (100, 100, 255), 1)
 
         # Draw center path (yellow, thicker)
         center_poly = getattr(detection, 'center_poly', None)
