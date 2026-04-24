@@ -275,9 +275,10 @@ class ZMQWebViewer:
         last_stats_time = time.time()
 
         while self.state.running:
-            frame_arrived = self.frame_ready_event.wait(timeout=0.1)
+            # frame_arrived = self.frame_ready_event.wait(timeout=0.1)
 
-            if frame_arrived and self.state.latest_frame is not None:
+            # if frame_arrived and self.state.latest_frame is not None:
+            if self.state.latest_frame is not None:
                 self.frame_ready_event.clear()
                 frames_before = self.frames_received
 
