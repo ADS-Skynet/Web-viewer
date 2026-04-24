@@ -5,236 +5,454 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lane Detection Viewer (ZMQ)</title>
     <style>
+        * {{
+            box-sizing: border-box;
+        }}
         body {{
             margin: 0;
-            padding: 20px;
-            background: #1e1e1e;
+            padding: 0;
+            background: #0a0a0a;
             color: #ffffff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'Roboto', sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
         }}
         h1 {{
-            margin: 0 0 20px 0;
-            font-size: 24px;
-            font-weight: 300;
+            margin: 0;
+            padding: 20px 24px;
+            font-size: 16px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            background: #111;
+            border-bottom: 1px solid #222;
         }}
         .container {{
-            max-width: 1200px;
+            max-width: 100%;
             width: 100%;
+        }}
+        .stream-section {{
+            display: flex;
+            gap: 0;
+            width: 100%;
+            border-bottom: 1px solid #222;
         }}
         .video-container {{
             position: relative;
-            width: 100%;
+            flex: 1;
             background: #000;
-            border-radius: 8px;
             overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            border-right: 1px solid #222;
         }}
         img {{
             width: 100%;
             height: auto;
             display: block;
         }}
-        .controls {{
-            margin-top: 20px;
-            padding: 15px;
-            background: #2d2d2d;
-            border-radius: 8px;
+        .hud-panel {{
+            width: 320px;
+            background: #0f0f0f;
+            padding: 0;
             display: flex;
-            gap: 10px;
+            flex-direction: column;
+        }}
+        .hud-panel h3 {{
+            margin: 0;
+            padding: 12px 16px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #999;
+            background: #111;
+            border-bottom: 1px solid #222;
+        }}
+        .hud-item {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            font-size: 13px;
+            border-bottom: 1px solid #1a1a1a;
+        }}
+        .hud-item .label {{
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 500;
+        }}
+        .hud-item .value {{
+            font-family: 'Courier New', monospace;
+            color: #e0e0e0;
+            font-size: 14px;
+        }}
+        .hud-item .value.warning {{
+            color: #ccc;
+        }}
+        .hud-item .value.danger {{
+            color: #ddd;
+        }}
+        .hud-group {{
+            display: flex;
+            flex-direction: column;
+            border-bottom: 1px solid #222;
+        }}
+        .hud-group:last-child {{
+            border-bottom: none;
+        }}
+        .steering-indicator {{
+            width: 100%;
+            height: 40px;
+            background: #0a0a0a;
+            position: relative;
+            overflow: hidden;
+            border-top: 1px solid #1a1a1a;
+            border-bottom: 1px solid #1a1a1a;
+        }}
+        .steering-indicator .center-line {{
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: #333;
+        }}
+        .steering-indicator .needle {{
+            position: absolute;
+            top: 8px;
+            bottom: 8px;
+            width: 2px;
+            background: #fff;
+            transition: left 0.1s ease-out;
+        }}
+        .controls {{
+            margin: 0;
+            padding: 16px 24px;
+            background: #111;
+            border-bottom: 1px solid #222;
+            display: flex;
+            gap: 8px;
             flex-wrap: wrap;
         }}
         .btn {{
-            padding: 10px 20px;
-            background: #4a4a4a;
-            border: none;
-            border-radius: 4px;
-            color: #fff;
+            padding: 8px 16px;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            color: #ccc;
             cursor: pointer;
-            font-size: 14px;
-            transition: background 0.2s;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.15s;
         }}
         .btn:hover {{
-            background: #5a5a5a;
+            background: #222;
+            border-color: #3a3a3a;
+            color: #fff;
         }}
         .btn.primary {{
-            background: #2196F3;
+            background: #222;
+            border-color: #444;
+            color: #fff;
         }}
         .btn.primary:hover {{
-            background: #1976D2;
+            background: #2a2a2a;
+            border-color: #555;
         }}
         .btn.warning {{
-            background: #FF9800;
+            background: #1a1a1a;
+            border-color: #333;
+            color: #bbb;
         }}
         .btn.warning:hover {{
-            background: #F57C00;
+            background: #222;
+            border-color: #444;
+            color: #fff;
         }}
         .btn.success {{
-            background: #4CAF50;
+            background: #1a1a1a;
+            border-color: #2a2a2a;
         }}
         .btn.success:hover {{
-            background: #45a049;
+            background: #222;
         }}
         .mode-controls {{
-            margin-top: 20px;
-            padding: 15px;
-            background: #2d2d2d;
-            border-radius: 8px;
+            margin: 0;
+            padding: 16px 24px;
+            background: #111;
+            border-bottom: 1px solid #222;
         }}
         .mode-controls h3 {{
-            margin: 0 0 15px 0;
-            font-size: 16px;
-            color: #2196F3;
+            margin: 0 0 12px 0;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #999;
         }}
         .mode-buttons {{
             display: flex;
-            gap: 10px;
+            gap: 8px;
             flex-wrap: wrap;
         }}
         .mode-btn {{
-            padding: 10px 20px;
-            background: #4a4a4a;
-            border: 2px solid #4a4a4a;
-            border-radius: 4px;
-            color: #fff;
+            padding: 8px 16px;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            color: #999;
             cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.15s;
         }}
         .mode-btn:hover {{
-            background: #5a5a5a;
-            border-color: #5a5a5a;
+            background: #222;
+            border-color: #3a3a3a;
+            color: #ccc;
         }}
         .mode-btn.active {{
-            background: #4CAF50;
-            border-color: #4CAF50;
+            background: #fff;
+            border-color: #fff;
+            color: #000;
         }}
         .toggle-controls {{
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #4a4a4a;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #222;
         }}
         .toggle-buttons {{
             display: flex;
-            gap: 10px;
+            gap: 8px;
             flex-wrap: wrap;
         }}
         .toggle-btn {{
-            padding: 8px 16px;
-            background: #4CAF50;
-            border: 2px solid #4CAF50;
-            border-radius: 4px;
-            color: #fff;
+            padding: 7px 14px;
+            background: #fff;
+            border: 1px solid #fff;
+            color: #000;
             cursor: pointer;
-            font-size: 13px;
-            transition: all 0.2s;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.15s;
         }}
         .toggle-btn:hover {{
-            opacity: 0.8;
+            background: #e0e0e0;
+            border-color: #e0e0e0;
         }}
         .toggle-btn.off {{
-            background: #666;
-            border-color: #666;
+            background: #1a1a1a;
+            border-color: #2a2a2a;
+            color: #888;
+        }}
+        .toggle-btn.off:hover {{
+            background: #222;
+            border-color: #333;
+            color: #999;
         }}
         .info {{
-            margin-top: 20px;
-            padding: 15px;
-            background: #2d2d2d;
-            border-radius: 8px;
-            font-size: 14px;
+            margin: 0;
+            padding: 16px 24px;
+            background: #0f0f0f;
+            border-bottom: 1px solid #1a1a1a;
+            font-size: 12px;
+            font-family: 'Courier New', monospace;
         }}
         .info-item {{
-            margin: 5px 0;
+            margin: 6px 0;
+            color: #888;
+        }}
+        .info-item strong {{
+            color: #aaa;
+            font-weight: 500;
         }}
         .badge {{
             display: inline-block;
             padding: 2px 8px;
-            background: #4CAF50;
-            border-radius: 3px;
-            font-size: 12px;
-            font-weight: bold;
+            background: #222;
+            border: 1px solid #333;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-left: 8px;
         }}
         .notification {{
             position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #4CAF50;
-            color: white;
-            padding: 15px 20px;
-            border-radius: 4px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            top: 24px;
+            right: 24px;
+            background: #fff;
+            color: #000;
+            padding: 12px 20px;
+            border: 1px solid #fff;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
             opacity: 0;
-            transition: opacity 0.3s;
+            transition: opacity 0.2s;
             z-index: 1000;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }}
         .notification.show {{
             opacity: 1;
         }}
         .notification.error {{
-            background: #f44336;
+            background: #1a1a1a;
+            color: #fff;
+            border-color: #333;
         }}
         .params-container {{
-            margin-top: 20px;
+            margin: 0;
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            gap: 0;
         }}
         .param-section {{
-            padding: 15px;
-            background: #2d2d2d;
-            border-radius: 8px;
+            padding: 20px 24px;
+            background: #0f0f0f;
+            border-right: 1px solid #1a1a1a;
+            border-bottom: 1px solid #1a1a1a;
+        }}
+        .param-section:nth-child(2n) {{
+            border-right: none;
         }}
         .param-section h3 {{
-            margin: 0 0 15px 0;
-            font-size: 16px;
-            color: #2196F3;
+            margin: 0 0 16px 0;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: #999;
         }}
         .param-control {{
-            margin-bottom: 12px;
+            margin-bottom: 16px;
         }}
         .param-control label {{
             display: block;
-            margin-bottom: 5px;
-            font-size: 13px;
-            color: #aaa;
+            margin-bottom: 8px;
+            font-size: 11px;
+            font-weight: 500;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }}
         .param-control input[type="range"] {{
             width: 100%;
-            margin-bottom: 5px;
+            margin-bottom: 6px;
+            height: 2px;
+            -webkit-appearance: none;
+            background: #222;
+            outline: none;
+        }}
+        .param-control input[type="range"]::-webkit-slider-thumb {{
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #fff;
+            cursor: pointer;
+        }}
+        .param-control input[type="range"]::-moz-range-thumb {{
+            width: 12px;
+            height: 12px;
+            background: #fff;
+            cursor: pointer;
+            border: none;
         }}
         .param-value {{
-            font-size: 12px;
-            color: #4CAF50;
-            font-family: monospace;
+            font-size: 11px;
+            color: #bbb;
+            font-family: 'Courier New', monospace;
         }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🚗 Lane Detection Viewer <span class="badge" id="modeBadge">{target}</span></h1>
-        <div class="video-container">
-            <img id="videoStream" src="" alt="Lane Detection Stream">
+        <h1>Lane Detection System<span class="badge" id="modeBadge">{target}</span><span class="badge">{detection_method}</span></h1>
+        <div class="stream-section">
+            <div class="video-container">
+                <canvas id="videoCanvas" style="width: 100%; height: auto;"></canvas>
+            </div>
+            <div class="hud-panel">
+                <div class="hud-group">
+                    <h3>Vehicle Status</h3>
+                    <div class="hud-item">
+                        <span class="label">Speed</span>
+                        <span class="value" id="hudSpeed">-- km/h</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Throttle</span>
+                        <span class="value" id="hudThrottle">--</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Brake</span>
+                        <span class="value" id="hudBrake">--</span>
+                    </div>
+                </div>
+                <div class="hud-group">
+                    <h3>Steering</h3>
+                    <div class="steering-indicator">
+                        <div class="center-line"></div>
+                        <div class="needle" id="steeringNeedle"></div>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Value</span>
+                        <span class="value" id="hudSteering">0.00</span>
+                    </div>
+                </div>
+                <div class="hud-group">
+                    <h3>Lane Status</h3>
+                    <div class="hud-item">
+                        <span class="label">Status</span>
+                        <span class="value" id="hudLaneStatus">--</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Offset</span>
+                        <span class="value" id="hudOffset">-- m</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Heading</span>
+                        <span class="value" id="hudHeading">-- deg</span>
+                    </div>
+                </div>
+                <div class="hud-group">
+                    <h3>Performance</h3>
+                    <div class="hud-item">
+                        <span class="label">Detection</span>
+                        <span class="value" id="hudDetectionTime">-- ms</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="label">Stream FPS</span>
+                        <span class="value" id="hudFps">--</span>
+                    </div>
+                </div>
+            </div>
         </div>
         <div class="controls">
-            <button class="btn primary" id="respawnBtn" onclick="sendAction('respawn')" style="display: {respawn_display};">🔄 Respawn Vehicle</button>
-            <button class="btn warning" id="pauseBtn" onclick="togglePause()">🛑 Stop</button>
-            <button class="btn" id="resetBtn" onclick="resetSystem()">🔄 Reset System</button>
+            <button class="btn primary" id="respawnBtn" onclick="sendAction('respawn')" style="display: {respawn_display};">Respawn Vehicle</button>
+            <button class="btn warning" id="pauseBtn" onclick="togglePause()">Stop</button>
+            <button class="btn" id="resetBtn" onclick="resetSystem()">Reset System</button>
         </div>
         <div class="mode-controls">
-            <h3>🎨 Visualization Layers</h3>
+            <h3>Visualization Layers</h3>
             <div class="toggle-buttons">
-                <button class="toggle-btn" id="rawImageToggle" onclick="toggleRawImage()">📷 Raw Image: ON</button>
-                <button class="toggle-btn" id="lanesToggle" onclick="toggleLanes()">🛣️ Lanes: ON</button>
-                <button class="toggle-btn off" id="cannyToggle" onclick="toggleCanny()">⚪ Canny: OFF</button>
-                <button class="toggle-btn off" id="houghToggle" onclick="toggleHough()">🔴 Hough: OFF</button>
-                <button class="toggle-btn" id="hudToggle" onclick="toggleHUD()">📊 HUD: ON</button>
+                <button class="toggle-btn" id="rawImageToggle" onclick="toggleRawImage()">Raw Image</button>
+                <button class="toggle-btn" id="lanesToggle" onclick="toggleLanes()">Lanes</button>
+                <button class="toggle-btn off" id="cannyToggle" onclick="toggleCanny()" style="display: {cv_display};">Canny</button>
+                <button class="toggle-btn off" id="houghToggle" onclick="toggleHough()" style="display: {cv_display};">Hough</button>
+                <button class="toggle-btn" id="hudToggle" onclick="toggleHUD()">HUD</button>
+                <button class="toggle-btn" id="segmentationToggle" onclick="toggleSegmentation()">Segmentation</button>
             </div>
         </div>
         <div class="info">
             <div class="info-item">
-                <strong>Target:</strong> {target} | <strong>Mode:</strong> WebSocket Real-Time Streaming
+                <strong>Target:</strong> {target} | <strong>Detection:</strong> {detection_method} | <strong>Mode:</strong> WebSocket Real-Time Streaming
             </div>
             <div class="info-item">
                 <strong>Connection:</strong> <span id="wsStatus" style="color: #FF9800;">Connecting...</span>
@@ -254,8 +472,8 @@
         </div>
 
         <div class="params-container">
-            <div class="param-section">
-                <h3>🔍 Detection Parameters</h3>
+            <div class="param-section" style="display: {cv_display};">
+                <h3>CV Detection Parameters</h3>
                 <div class="param-control">
                     <label>Canny Low Threshold</label>
                     <input type="range" id="canny_low" min="1" max="150" value="{canny_low}" step="1"
@@ -295,24 +513,42 @@
             </div>
 
             <div class="param-section">
-                <h3>🎯 Decision (PID Control) Parameters</h3>
+                <h3>Decision ({controller_label}) Parameters</h3>
                 <div class="param-control">
-                    <label>Kp (Proportional Gain)</label>
-                    <input type="range" id="kp" min="0" max="2" value="0.5" step="0.05"
+                    <label>{kp_label}</label>
+                    <input type="range" id="kp" min="0" max="2" value="{kp_value}" step="0.05"
                            oninput="updateParam('decision', 'kp', this.value)">
-                    <span class="param-value" id="kp_val">0.50</span>
+                    <span class="param-value" id="kp_val">{kp_value:.2f}</span>
                 </div>
-                <div class="param-control">
+                <div class="param-control" style="display: {ki_display};">
                     <label>Ki (Integral Gain)</label>
-                    <input type="range" id="ki" min="0" max="0.5" value="0.01" step="0.005"
+                    <input type="range" id="ki" min="0" max="0.5" value="{ki_value}" step="0.005"
                            oninput="updateParam('decision', 'ki', this.value)">
-                    <span class="param-value" id="ki_val">0.01</span>
+                    <span class="param-value" id="ki_val">{ki_value:.3f}</span>
                 </div>
                 <div class="param-control">
-                    <label>Kd (Derivative Gain)</label>
-                    <input type="range" id="kd" min="0" max="1" value="0.1" step="0.05"
+                    <label>{kd_label}</label>
+                    <input type="range" id="kd" min="0" max="1" value="{kd_value}" step="0.05"
                            oninput="updateParam('decision', 'kd', this.value)">
-                    <span class="param-value" id="kd_val">0.10</span>
+                    <span class="param-value" id="kd_val">{kd_value:.2f}</span>
+                </div>
+                <div class="param-control" style="display: {lookahead_display};">
+                    <label>Lookahead Ratio</label>
+                    <input type="range" id="lookahead_ratio" min="0.1" max="0.8" value="{lookahead_ratio}" step="0.05"
+                           oninput="updateParam('decision', 'lookahead_ratio', this.value)">
+                    <span class="param-value" id="lookahead_ratio_val">{lookahead_ratio:.2f}</span>
+                </div>
+                <div class="param-control">
+                    <label>Camera Offset X</label>
+                    <input type="range" id="camera_offset_x" min="-200" max="200" value="{camera_offset_x}" step="5"
+                           oninput="updateParam('decision', 'camera_offset_x', this.value)">
+                    <span class="param-value" id="camera_offset_x_val">{camera_offset_x}</span>
+                </div>
+                <div class="param-control">
+                    <label>Lane Confidence</label>
+                    <input type="range" id="min_confidence" min="0" max="0.8" value="0.30" step="0.05"
+                           oninput="updateParam('decision', 'min_confidence', this.value)">
+                    <span class="param-value" id="min_confidence_val">0.30</span>
                 </div>
                 <div class="param-control">
                     <label>Base Throttle</label>
@@ -335,7 +571,7 @@
             </div>
 
             <div class="param-section">
-                <h3>🚗 Vehicle Control</h3>
+                <h3>Vehicle Control</h3>
                 <div class="param-control">
                     <label>Throttle</label>
                     <input type="range" id="throttle" min="0" max="0.5" value="{throttle_base}" step="0.01"
@@ -345,9 +581,9 @@
             </div>
         </div>
 
-        <div class="params-container">
+        <div class="params-container" style="display: {cv_display};">
             <div class="param-section">
-                <h3>📐 ROI (Region of Interest) Parameters</h3>
+                <h3>ROI Parameters</h3>
                 <div class="param-control">
                     <label>ROI Bottom Left X</label>
                     <input type="range" id="roi_bottom_left_x" min="0" max="0.3" value="{roi_bottom_left_x}" step="0.01"
@@ -369,7 +605,7 @@
             </div>
 
             <div class="param-section">
-                <h3>📐 ROI Parameters (continued)</h3>
+                <h3>ROI Parameters (continued)</h3>
                 <div class="param-control">
                     <label>ROI Bottom Right X</label>
                     <input type="range" id="roi_bottom_right_x" min="0.7" max="1.0" value="{roi_bottom_right_x}" step="0.01"
@@ -398,9 +634,65 @@
         let lastFrameTime = Date.now();
         let fpsInterval = null;
 
+        // Canvas rendering for low-latency display
+        const canvas = document.getElementById('videoCanvas');
+        const ctx = canvas.getContext('2d');
+        let canvasInitialized = false;
+
+        // Frame queue for smooth rendering (prevents frame buildup)
+        let latestFrame = null;
+        let frameProcessing = false;
+        let pendingRender = false;
+
         // Get WebSocket URL (HTTP port + 1)
         const wsPort = parseInt(window.location.port || 8080) + 1;
         const wsUrl = `ws://${{window.location.hostname}}:${{wsPort}}`;
+
+        // Render the latest frame to canvas
+        function renderLatestFrame() {{
+            pendingRender = false;
+
+            if (!latestFrame || frameProcessing) {{
+                return;
+            }}
+
+            frameProcessing = true;
+            const frameToRender = latestFrame;
+            latestFrame = null;  // Clear so we render the latest when next frame arrives
+
+            // Decode and render
+            createImageBitmap(frameToRender).then(function(bitmap) {{
+                // Initialize canvas size on first frame or size change
+                if (!canvasInitialized || canvas.width !== bitmap.width || canvas.height !== bitmap.height) {{
+                    canvas.width = bitmap.width;
+                    canvas.height = bitmap.height;
+                    canvasInitialized = true;
+                }}
+
+                // Draw directly to canvas
+                ctx.drawImage(bitmap, 0, 0);
+                bitmap.close();  // Free memory
+
+                // Latency calculation
+                const now = Date.now();
+                if (window.lastFrameReceived) {{
+                    const latency = now - window.lastFrameReceived;
+                    document.getElementById('latencyDisplay').textContent = latency.toFixed(0);
+                }}
+                window.lastFrameReceived = now;
+
+                frameProcessing = false;
+
+                // If new frame arrived during processing, render it
+                if (latestFrame && !pendingRender) {{
+                    pendingRender = true;
+                    requestAnimationFrame(renderLatestFrame);
+                }}
+            }}).catch(function(err) {{
+                console.error('Failed to decode frame:', err);
+                frameProcessing = false;
+            }});
+        }}
 
         function connectWebSocket() {{
             console.log('Connecting to WebSocket:', wsUrl);
@@ -425,28 +717,18 @@
             ws.onmessage = function(event) {{
                 // Check if binary (frame) or text (status)
                 if (event.data instanceof Blob) {{
-                    // Binary frame data
-                    const img = document.getElementById('videoStream');
-                    const url = URL.createObjectURL(event.data);
+                    // Store latest frame blob - always keep only the newest
+                    // This prevents frame queue buildup
+                    latestFrame = event.data;
 
-                    // Clean up old URL
-                    if (img.src && img.src.startsWith('blob:')) {{
-                        URL.revokeObjectURL(img.src);
-                    }}
-
-                    img.src = url;
-
-                    // Update FPS counter
+                    // Update FPS counter for received frames
                     frameCount++;
 
-                    // Latency calculation (approximate, no timestamp in binary)
-                    const now = Date.now();
-                    if (window.lastFrameReceived) {{
-                        const latency = now - window.lastFrameReceived;
-                        document.getElementById('latencyDisplay').textContent = latency.toFixed(0);
+                    // Request render on next animation frame (if not already pending)
+                    if (!pendingRender) {{
+                        pendingRender = true;
+                        requestAnimationFrame(renderLatestFrame);
                     }}
-                    window.lastFrameReceived = now;
-
                 }} else {{
                     // Text message (status)
                     try {{
@@ -463,7 +745,7 @@
                                     stateElem.style.color = '#4CAF50';
                                 }}
 
-                                // Update vehicle telemetry displays
+                                // Update vehicle telemetry displays (footer)
                                 if (msg.speed_kmh !== undefined) {{
                                     document.getElementById('speedDisplay').textContent = msg.speed_kmh.toFixed(1);
                                 }}
@@ -473,20 +755,77 @@
                                 if (msg.brake !== undefined) {{
                                     const brakeElem = document.getElementById('brakeDisplay');
                                     brakeElem.textContent = msg.brake.toFixed(2);
-                                    // Highlight brake when active
                                     brakeElem.style.color = msg.brake > 0.1 ? '#f44336' : '#888';
+                                }}
+
+                                // Update HUD panel
+                                if (msg.speed_kmh !== undefined) {{
+                                    document.getElementById('hudSpeed').textContent = msg.speed_kmh.toFixed(1) + ' km/h';
+                                }}
+                                if (msg.throttle !== undefined) {{
+                                    document.getElementById('hudThrottle').textContent = msg.throttle.toFixed(2);
+                                }}
+                                if (msg.brake !== undefined) {{
+                                    const hudBrake = document.getElementById('hudBrake');
+                                    hudBrake.textContent = msg.brake.toFixed(2);
+                                    hudBrake.className = msg.brake > 0.1 ? 'value danger' : 'value';
+                                }}
+                                if (msg.steering !== undefined) {{
+                                    const steerVal = msg.steering.toFixed(2);
+                                    document.getElementById('hudSteering').textContent = steerVal;
+                                    // Update steering needle position (steering -1 to 1 -> 10% to 90%)
+                                    const needlePos = 50 + (msg.steering * 40);
+                                    document.getElementById('steeringNeedle').style.left = needlePos + '%';
+                                    // Color based on steering magnitude
+                                    const needle = document.getElementById('steeringNeedle');
+                                    if (Math.abs(msg.steering) < 0.3) {{
+                                        needle.style.background = '#4CAF50';
+                                    }} else if (Math.abs(msg.steering) < 0.6) {{
+                                        needle.style.background = '#FF9800';
+                                    }} else {{
+                                        needle.style.background = '#f44336';
+                                    }}
+                                }}
+                            }}
+
+                            // Update lane metrics in HUD
+                            if (msg.departure_status !== undefined) {{
+                                const statusElem = document.getElementById('hudLaneStatus');
+                                statusElem.textContent = msg.departure_status.toUpperCase();
+                                // Color based on status
+                                if (msg.departure_status === 'centered') {{
+                                    statusElem.className = 'value';
+                                }} else if (msg.departure_status.includes('drift')) {{
+                                    statusElem.className = 'value warning';
+                                }} else if (msg.departure_status.includes('departure')) {{
+                                    statusElem.className = 'value danger';
+                                }} else {{
+                                    statusElem.className = 'value';
+                                }}
+                            }}
+                            if (msg.lateral_offset_m !== undefined && msg.lateral_offset_m !== null) {{
+                                const direction = msg.lateral_offset_m > 0 ? 'R' : 'L';
+                                document.getElementById('hudOffset').textContent = Math.abs(msg.lateral_offset_m).toFixed(2) + 'm ' + direction;
+                            }}
+                            if (msg.heading_angle_deg !== undefined && msg.heading_angle_deg !== null) {{
+                                document.getElementById('hudHeading').textContent = msg.heading_angle_deg.toFixed(1) + ' deg';
+                            }}
+                            if (msg.detection_time_ms !== undefined) {{
+                                const detElem = document.getElementById('hudDetectionTime');
+                                detElem.textContent = msg.detection_time_ms.toFixed(1) + ' ms';
+                                // Color based on detection time
+                                if (msg.detection_time_ms < 50) {{
+                                    detElem.className = 'value';
+                                }} else if (msg.detection_time_ms < 100) {{
+                                    detElem.className = 'value warning';
+                                }} else {{
+                                    detElem.className = 'value danger';
                                 }}
                             }}
 
                             // Always update button state from paused field
-                            // paused can be true, false, or undefined/null
                             if (msg.paused !== undefined && msg.paused !== null) {{
                                 updateButtonState(msg.paused);
-                            }}
-
-                            // Debug: log state info
-                            if (msg.steering !== undefined) {{
-                                console.log('Vehicle state: steering=' + msg.steering.toFixed(3) + ', paused=' + msg.paused);
                             }}
                         }}
                     }} catch (e) {{
@@ -528,6 +867,7 @@
                 const fps = frameCount / elapsed;
 
                 document.getElementById('fpsDisplay').textContent = fps.toFixed(1);
+                document.getElementById('hudFps').textContent = fps.toFixed(1);
 
                 // Reset counter
                 frameCount = 0;
@@ -561,7 +901,7 @@
                 if (parameter.includes('throttle') || parameter.includes('kp') ||
                     parameter.includes('ki') || parameter.includes('kd') ||
                     parameter.includes('steer') || parameter.includes('smoothing') ||
-                    parameter.includes('roi')) {{
+                    parameter.includes('roi') || parameter.includes('lookahead')) {{
                     displayElem.textContent = parseFloat(value).toFixed(2);
                 }} else {{
                     displayElem.textContent = Math.round(value);
@@ -581,11 +921,11 @@
             isPaused = paused;
             const btn = document.getElementById('pauseBtn');
             if (isPaused) {{
-                btn.textContent = '▶️ Resume';
+                btn.textContent = 'Resume';
                 btn.classList.add('primary');
                 btn.classList.remove('warning');
             }} else {{
-                btn.textContent = '🛑 Stop';
+                btn.textContent = 'Stop';
                 btn.classList.remove('primary');
                 btn.classList.add('warning');
             }}
@@ -626,22 +966,21 @@
             showNotification('System reset: Vehicle paused, steering zeroed, all state cleared');
         }}
 
-        // Toggle states (default: raw image, lanes, and HUD ON; canny and hough OFF)
+        // Toggle states (default: raw image, lanes, HUD, and segmentation ON; canny and hough OFF)
         let rawImageEnabled = true;
         let lanesEnabled = true;
         let cannyEnabled = false;
         let houghEnabled = false;
         let hudEnabled = true;
+        let segmentationEnabled = true;
 
         function toggleRawImage() {{
             rawImageEnabled = !rawImageEnabled;
             const btn = document.getElementById('rawImageToggle');
 
             if (rawImageEnabled) {{
-                btn.textContent = '📷 Raw Image: ON';
                 btn.classList.remove('off');
             }} else {{
-                btn.textContent = '📷 Raw Image: OFF';
                 btn.classList.add('off');
             }}
 
@@ -652,7 +991,7 @@
                 enabled: rawImageEnabled
             }});
 
-            showNotification('Raw Image: ' + (rawImageEnabled ? 'ON' : 'OFF'));
+            showNotification('Raw Image ' + (rawImageEnabled ? 'enabled' : 'disabled'));
         }}
 
         function toggleLanes() {{
@@ -660,10 +999,8 @@
             const btn = document.getElementById('lanesToggle');
 
             if (lanesEnabled) {{
-                btn.textContent = '🛣️ Lanes: ON';
                 btn.classList.remove('off');
             }} else {{
-                btn.textContent = '🛣️ Lanes: OFF';
                 btn.classList.add('off');
             }}
 
@@ -674,7 +1011,7 @@
                 enabled: lanesEnabled
             }});
 
-            showNotification('Lanes: ' + (lanesEnabled ? 'ON' : 'OFF'));
+            showNotification('Lanes ' + (lanesEnabled ? 'enabled' : 'disabled'));
         }}
 
         function toggleCanny() {{
@@ -682,10 +1019,8 @@
             const btn = document.getElementById('cannyToggle');
 
             if (cannyEnabled) {{
-                btn.textContent = '⚪ Canny: ON';
                 btn.classList.remove('off');
             }} else {{
-                btn.textContent = '⚪ Canny: OFF';
                 btn.classList.add('off');
             }}
 
@@ -696,7 +1031,7 @@
                 enabled: cannyEnabled
             }});
 
-            showNotification('Canny: ' + (cannyEnabled ? 'ON' : 'OFF'));
+            showNotification('Canny ' + (cannyEnabled ? 'enabled' : 'disabled'));
         }}
 
         function toggleHough() {{
@@ -704,10 +1039,8 @@
             const btn = document.getElementById('houghToggle');
 
             if (houghEnabled) {{
-                btn.textContent = '🔴 Hough: ON';
                 btn.classList.remove('off');
             }} else {{
-                btn.textContent = '🔴 Hough: OFF';
                 btn.classList.add('off');
             }}
 
@@ -718,7 +1051,7 @@
                 enabled: houghEnabled
             }});
 
-            showNotification('Hough: ' + (houghEnabled ? 'ON' : 'OFF'));
+            showNotification('Hough ' + (houghEnabled ? 'enabled' : 'disabled'));
         }}
 
         function toggleHUD() {{
@@ -726,10 +1059,8 @@
             const btn = document.getElementById('hudToggle');
 
             if (hudEnabled) {{
-                btn.textContent = '📊 HUD: ON';
                 btn.classList.remove('off');
             }} else {{
-                btn.textContent = '📊 HUD: OFF';
                 btn.classList.add('off');
             }}
 
@@ -740,7 +1071,27 @@
                 enabled: hudEnabled
             }});
 
-            showNotification('HUD: ' + (hudEnabled ? 'ON' : 'OFF'));
+            showNotification('HUD ' + (hudEnabled ? 'enabled' : 'disabled'));
+        }}
+
+        function toggleSegmentation() {{
+            segmentationEnabled = !segmentationEnabled;
+            const btn = document.getElementById('segmentationToggle');
+
+            if (segmentationEnabled) {{
+                btn.classList.remove('off');
+            }} else {{
+                btn.classList.add('off');
+            }}
+
+            // Send toggle state to viewer
+            sendWebSocketMessage({{
+                type: 'toggle',
+                setting: 'segmentation',
+                enabled: segmentationEnabled
+            }});
+
+            showNotification('Segmentation ' + (segmentationEnabled ? 'enabled' : 'disabled'));
         }}
 
         function showNotification(message, isError = false) {{
