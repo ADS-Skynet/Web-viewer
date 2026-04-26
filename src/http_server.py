@@ -247,51 +247,15 @@ def _build_html(state: ViewerState) -> str:
         template = f.read()
 
     config = ConfigManager.load()
-    ctrl_method = config.controller.method.lower()
-
-    ctrl_labels = {
-        'pid': ('PID Control', 'Kp (Proportional Gain)', 'Kd (Derivative Gain)'),
-        'pd': ('PD Control', 'Kp (Proportional Gain)', 'Kd (Derivative Gain)'),
-        'pure_pursuit': ('Pure Pursuit', 'Gain (Steering)', 'Heading Gain'),
-        'mpc': ('MPC Control', 'Q Lateral', 'Q Heading'),
-    }
-    controller_label, kp_label, kd_label = ctrl_labels.get(
-        ctrl_method, ('PID Control', 'Kp (Proportional Gain)', 'Kd (Derivative Gain)'),
-    )
-
     respawn_display = "inline-block" if state.target == "simulation" else "none"
-    cv_display = "block" if state.detection_method == "cv" else "none"
 
     return template.format(
         vehicle_url=state.vehicle_url,
         target=state.target.upper(),
         detection_method=state.detection_method.upper(),
         respawn_display=respawn_display,
-        cv_display=cv_display,
-        # ROI
-        roi_bottom_left_x=state.roi_config['roi_bottom_left_x'],
-        roi_top_left_x=state.roi_config['roi_top_left_x'],
-        roi_top_right_x=state.roi_config['roi_top_right_x'],
-        roi_bottom_right_x=state.roi_config['roi_bottom_right_x'],
-        roi_top_y=state.roi_config['roi_top_y'],
-        # CV detection
-        canny_low=state.canny_low,
-        canny_high=state.canny_high,
-        hough_threshold=state.hough_threshold,
-        hough_min_line_len=state.hough_min_line_len,
-        hough_max_line_gap=state.hough_max_line_gap,
-        smoothing_factor=state.smoothing_factor,
-        # Throttle
-        throttle_base=config.throttle_policy.base,
-        # Controller
-        controller_label=controller_label,
-        kp_label=kp_label,
-        kd_label=kd_label,
         kp_value=config.controller.kp,
-        ki_value=config.controller.ki,
-        kd_value=config.controller.kd,
-        ki_display="block" if ctrl_method == "pid" else "none",
-        lookahead_display="block" if ctrl_method == "pure_pursuit" else "none",
         lookahead_ratio=config.controller.lookahead_ratio,
+        throttle_base=config.throttle_policy.base,
         camera_offset_x=config.camera.offset_x,
     )

@@ -45,29 +45,8 @@ class MessageHandler:
 
         Returns a response dict suitable for JSON serialization.
         """
-        # Update local ROI config
-        if parameter.startswith('roi_'):
-            self.state.roi_config[parameter] = value
-            self.state.roi_cache_frame_size = None  # invalidate cache
-            if self.verbose:
-                print(f"[ROI] Updated local ROI config: {parameter} = {value}")
-
-        # Update local CV / decision parameters
-        param_map = {
-            'canny_low': ('canny_low', int),
-            'canny_high': ('canny_high', int),
-            'hough_threshold': ('hough_threshold', int),
-            'hough_min_line_len': ('hough_min_line_len', int),
-            'hough_max_line_gap': ('hough_max_line_gap', int),
-            'smoothing_factor': ('smoothing_factor', float),
-            'camera_offset_x': ('camera_offset_x', int),
-        }
-
-        if parameter in param_map:
-            attr, cast = param_map[parameter]
-            setattr(self.state, attr, cast(value))
-            if self.verbose and parameter not in ('camera_offset_x',):
-                print(f"[CV] Updated local viewer rendering: {parameter} = {value}")
+        if parameter == 'camera_offset_x':
+            self.state.camera_offset_x = int(value)
 
         # Forward to remote servers
         self.parameter_publisher.send_parameter(category, parameter, value)
@@ -87,8 +66,6 @@ class MessageHandler:
         toggle_map = {
             'raw_image': 'show_raw_image',
             'lanes': 'show_lanes',
-            'canny': 'show_canny',
-            'hough': 'show_hough',
             'hud': 'show_hud',
             'segmentation': 'show_segmentation',
         }

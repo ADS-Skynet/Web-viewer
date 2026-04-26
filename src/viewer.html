@@ -444,8 +444,6 @@
             <div class="toggle-buttons">
                 <button class="toggle-btn" id="rawImageToggle" onclick="toggleRawImage()">Raw Image</button>
                 <button class="toggle-btn" id="lanesToggle" onclick="toggleLanes()">Lanes</button>
-                <button class="toggle-btn off" id="cannyToggle" onclick="toggleCanny()" style="display: {cv_display};">Canny</button>
-                <button class="toggle-btn off" id="houghToggle" onclick="toggleHough()" style="display: {cv_display};">Hough</button>
                 <button class="toggle-btn" id="hudToggle" onclick="toggleHUD()">HUD</button>
                 <button class="toggle-btn" id="segmentationToggle" onclick="toggleSegmentation()">Segmentation</button>
             </div>
@@ -472,67 +470,15 @@
         </div>
 
         <div class="params-container">
-            <div class="param-section" style="display: {cv_display};">
-                <h3>CV Detection Parameters</h3>
-                <div class="param-control">
-                    <label>Canny Low Threshold</label>
-                    <input type="range" id="canny_low" min="1" max="150" value="{canny_low}" step="1"
-                           oninput="updateParam('detection', 'canny_low', this.value)">
-                    <span class="param-value" id="canny_low_val">{canny_low}</span>
-                </div>
-                <div class="param-control">
-                    <label>Canny High Threshold</label>
-                    <input type="range" id="canny_high" min="50" max="255" value="{canny_high}" step="1"
-                           oninput="updateParam('detection', 'canny_high', this.value)">
-                    <span class="param-value" id="canny_high_val">{canny_high}</span>
-                </div>
-                <div class="param-control">
-                    <label>Hough Threshold</label>
-                    <input type="range" id="hough_threshold" min="1" max="150" value="{hough_threshold}" step="1"
-                           oninput="updateParam('detection', 'hough_threshold', this.value)">
-                    <span class="param-value" id="hough_threshold_val">{hough_threshold}</span>
-                </div>
-                <div class="param-control">
-                    <label>Hough Min Line Length</label>
-                    <input type="range" id="hough_min_line_len" min="10" max="150" value="{hough_min_line_len}" step="5"
-                           oninput="updateParam('detection', 'hough_min_line_len', this.value)">
-                    <span class="param-value" id="hough_min_line_len_val">{hough_min_line_len}</span>
-                </div>
-                <div class="param-control">
-                    <label>Hough Max Line Gap</label>
-                    <input type="range" id="hough_max_line_gap" min="10" max="300" value="{hough_max_line_gap}" step="10"
-                           oninput="updateParam('detection', 'hough_max_line_gap', this.value)">
-                    <span class="param-value" id="hough_max_line_gap_val">{hough_max_line_gap}</span>
-                </div>
-                <div class="param-control">
-                    <label>Smoothing Factor</label>
-                    <input type="range" id="smoothing_factor" min="0" max="1" value="{smoothing_factor}" step="0.05"
-                           oninput="updateParam('detection', 'smoothing_factor', this.value)">
-                    <span class="param-value" id="smoothing_factor_val">{smoothing_factor:.2f}</span>
-                </div>
-            </div>
-
             <div class="param-section">
-                <h3>Decision ({controller_label}) Parameters</h3>
+                <h3>Pure Pursuit Parameters</h3>
                 <div class="param-control">
-                    <label>{kp_label}</label>
+                    <label>Steering Gain</label>
                     <input type="range" id="kp" min="0" max="2" value="{kp_value}" step="0.05"
                            oninput="updateParam('decision', 'kp', this.value)">
                     <span class="param-value" id="kp_val">{kp_value:.2f}</span>
                 </div>
-                <div class="param-control" style="display: {ki_display};">
-                    <label>Ki (Integral Gain)</label>
-                    <input type="range" id="ki" min="0" max="0.5" value="{ki_value}" step="0.005"
-                           oninput="updateParam('decision', 'ki', this.value)">
-                    <span class="param-value" id="ki_val">{ki_value:.3f}</span>
-                </div>
                 <div class="param-control">
-                    <label>{kd_label}</label>
-                    <input type="range" id="kd" min="0" max="1" value="{kd_value}" step="0.05"
-                           oninput="updateParam('decision', 'kd', this.value)">
-                    <span class="param-value" id="kd_val">{kd_value:.2f}</span>
-                </div>
-                <div class="param-control" style="display: {lookahead_display};">
                     <label>Lookahead Ratio</label>
                     <input type="range" id="lookahead_ratio" min="0.1" max="0.8" value="{lookahead_ratio}" step="0.05"
                            oninput="updateParam('decision', 'lookahead_ratio', this.value)">
@@ -550,6 +496,10 @@
                            oninput="updateParam('decision', 'min_confidence', this.value)">
                     <span class="param-value" id="min_confidence_val">0.30</span>
                 </div>
+            </div>
+
+            <div class="param-section">
+                <h3>Throttle Policy</h3>
                 <div class="param-control">
                     <label>Base Throttle</label>
                     <input type="range" id="throttle_base" min="0" max="0.5" value="{throttle_base}" step="0.01"
@@ -568,55 +518,11 @@
                            oninput="updateParam('decision', 'steer_threshold', this.value)">
                     <span class="param-value" id="steer_threshold_val">0.15</span>
                 </div>
-            </div>
-
-            <div class="param-section">
-                <h3>Vehicle Control</h3>
                 <div class="param-control">
-                    <label>Throttle</label>
+                    <label>Vehicle Throttle</label>
                     <input type="range" id="throttle" min="0" max="0.5" value="{throttle_base}" step="0.01"
                            oninput="updateParam('vehicle', 'throttle', this.value)">
                     <span class="param-value" id="throttle_val">{throttle_base:.2f}</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="params-container" style="display: {cv_display};">
-            <div class="param-section">
-                <h3>ROI Parameters</h3>
-                <div class="param-control">
-                    <label>ROI Bottom Left X</label>
-                    <input type="range" id="roi_bottom_left_x" min="0" max="0.3" value="{roi_bottom_left_x}" step="0.01"
-                           oninput="updateParam('detection', 'roi_bottom_left_x', this.value)">
-                    <span class="param-value" id="roi_bottom_left_x_val">{roi_bottom_left_x:.2f}</span>
-                </div>
-                <div class="param-control">
-                    <label>ROI Top Left X</label>
-                    <input type="range" id="roi_top_left_x" min="0.2" max="0.5" value="{roi_top_left_x}" step="0.01"
-                           oninput="updateParam('detection', 'roi_top_left_x', this.value)">
-                    <span class="param-value" id="roi_top_left_x_val">{roi_top_left_x:.2f}</span>
-                </div>
-                <div class="param-control">
-                    <label>ROI Top Right X</label>
-                    <input type="range" id="roi_top_right_x" min="0.5" max="0.8" value="{roi_top_right_x}" step="0.01"
-                           oninput="updateParam('detection', 'roi_top_right_x', this.value)">
-                    <span class="param-value" id="roi_top_right_x_val">{roi_top_right_x:.2f}</span>
-                </div>
-            </div>
-
-            <div class="param-section">
-                <h3>ROI Parameters (continued)</h3>
-                <div class="param-control">
-                    <label>ROI Bottom Right X</label>
-                    <input type="range" id="roi_bottom_right_x" min="0.7" max="1.0" value="{roi_bottom_right_x}" step="0.01"
-                           oninput="updateParam('detection', 'roi_bottom_right_x', this.value)">
-                    <span class="param-value" id="roi_bottom_right_x_val">{roi_bottom_right_x:.2f}</span>
-                </div>
-                <div class="param-control">
-                    <label>ROI Top Y</label>
-                    <input type="range" id="roi_top_y" min="0.3" max="0.7" value="{roi_top_y}" step="0.01"
-                           oninput="updateParam('detection', 'roi_top_y', this.value)">
-                    <span class="param-value" id="roi_top_y_val">{roi_top_y:.2f}</span>
                 </div>
             </div>
         </div>
@@ -658,22 +564,18 @@
 
             frameProcessing = true;
             const frameToRender = latestFrame;
-            latestFrame = null;  // Clear so we render the latest when next frame arrives
+            latestFrame = null;
 
-            // Decode and render
             createImageBitmap(frameToRender).then(function(bitmap) {{
-                // Initialize canvas size on first frame or size change
                 if (!canvasInitialized || canvas.width !== bitmap.width || canvas.height !== bitmap.height) {{
                     canvas.width = bitmap.width;
                     canvas.height = bitmap.height;
                     canvasInitialized = true;
                 }}
 
-                // Draw directly to canvas
                 ctx.drawImage(bitmap, 0, 0);
-                bitmap.close();  // Free memory
+                bitmap.close();
 
-                // Latency calculation
                 const now = Date.now();
                 if (window.lastFrameReceived) {{
                     const latency = now - window.lastFrameReceived;
@@ -683,7 +585,6 @@
 
                 frameProcessing = false;
 
-                // If new frame arrived during processing, render it
                 if (latestFrame && !pendingRender) {{
                     pendingRender = true;
                     requestAnimationFrame(renderLatestFrame);
@@ -704,40 +605,29 @@
                 console.log('WebSocket connected');
                 updateConnectionStatus('Connected', '#4CAF50');
 
-                // Clear reconnect timer
                 if (reconnectTimer) {{
                     clearTimeout(reconnectTimer);
                     reconnectTimer = null;
                 }}
 
-                // Start FPS counter
                 startFpsCounter();
             }};
 
             ws.onmessage = function(event) {{
-                // Check if binary (frame) or text (status)
                 if (event.data instanceof Blob) {{
-                    // Store latest frame blob - always keep only the newest
-                    // This prevents frame queue buildup
                     latestFrame = event.data;
-
-                    // Update FPS counter for received frames
                     frameCount++;
 
-                    // Request render on next animation frame (if not already pending)
                     if (!pendingRender) {{
                         pendingRender = true;
                         requestAnimationFrame(renderLatestFrame);
                     }}
                 }} else {{
-                    // Text message (status)
                     try {{
                         const msg = JSON.parse(event.data);
 
                         if (msg.type === 'status') {{
-                            // Update state data indicator
                             if (msg.steering !== undefined || msg.speed_kmh !== undefined) {{
-                                // We have actual vehicle state data
                                 if (!hasStateData) {{
                                     hasStateData = true;
                                     const stateElem = document.getElementById('stateStatus');
@@ -745,38 +635,26 @@
                                     stateElem.style.color = '#4CAF50';
                                 }}
 
-                                // Update vehicle telemetry displays (footer)
                                 if (msg.speed_kmh !== undefined) {{
                                     document.getElementById('speedDisplay').textContent = msg.speed_kmh.toFixed(1);
+                                    document.getElementById('hudSpeed').textContent = msg.speed_kmh.toFixed(1) + ' km/h';
                                 }}
                                 if (msg.throttle !== undefined) {{
                                     document.getElementById('throttleDisplay').textContent = msg.throttle.toFixed(2);
+                                    document.getElementById('hudThrottle').textContent = msg.throttle.toFixed(2);
                                 }}
                                 if (msg.brake !== undefined) {{
                                     const brakeElem = document.getElementById('brakeDisplay');
                                     brakeElem.textContent = msg.brake.toFixed(2);
                                     brakeElem.style.color = msg.brake > 0.1 ? '#f44336' : '#888';
-                                }}
-
-                                // Update HUD panel
-                                if (msg.speed_kmh !== undefined) {{
-                                    document.getElementById('hudSpeed').textContent = msg.speed_kmh.toFixed(1) + ' km/h';
-                                }}
-                                if (msg.throttle !== undefined) {{
-                                    document.getElementById('hudThrottle').textContent = msg.throttle.toFixed(2);
-                                }}
-                                if (msg.brake !== undefined) {{
                                     const hudBrake = document.getElementById('hudBrake');
                                     hudBrake.textContent = msg.brake.toFixed(2);
                                     hudBrake.className = msg.brake > 0.1 ? 'value danger' : 'value';
                                 }}
                                 if (msg.steering !== undefined) {{
-                                    const steerVal = msg.steering.toFixed(2);
-                                    document.getElementById('hudSteering').textContent = steerVal;
-                                    // Update steering needle position (steering -1 to 1 -> 10% to 90%)
+                                    document.getElementById('hudSteering').textContent = msg.steering.toFixed(2);
                                     const needlePos = 50 + (msg.steering * 40);
                                     document.getElementById('steeringNeedle').style.left = needlePos + '%';
-                                    // Color based on steering magnitude
                                     const needle = document.getElementById('steeringNeedle');
                                     if (Math.abs(msg.steering) < 0.3) {{
                                         needle.style.background = '#4CAF50';
@@ -788,11 +666,9 @@
                                 }}
                             }}
 
-                            // Update lane metrics in HUD
                             if (msg.departure_status !== undefined) {{
                                 const statusElem = document.getElementById('hudLaneStatus');
                                 statusElem.textContent = msg.departure_status.toUpperCase();
-                                // Color based on status
                                 if (msg.departure_status === 'centered') {{
                                     statusElem.className = 'value';
                                 }} else if (msg.departure_status.includes('drift')) {{
@@ -813,7 +689,6 @@
                             if (msg.detection_time_ms !== undefined) {{
                                 const detElem = document.getElementById('hudDetectionTime');
                                 detElem.textContent = msg.detection_time_ms.toFixed(1) + ' ms';
-                                // Color based on detection time
                                 if (msg.detection_time_ms < 50) {{
                                     detElem.className = 'value';
                                 }} else if (msg.detection_time_ms < 100) {{
@@ -823,7 +698,6 @@
                                 }}
                             }}
 
-                            // Always update button state from paused field
                             if (msg.paused !== undefined && msg.paused !== null) {{
                                 updateButtonState(msg.paused);
                             }}
@@ -842,11 +716,7 @@
             ws.onclose = function() {{
                 console.log('WebSocket disconnected');
                 updateConnectionStatus('Disconnected', '#f44336');
-
-                // Stop FPS counter
                 stopFpsCounter();
-
-                // Attempt to reconnect after 2 seconds
                 reconnectTimer = setTimeout(connectWebSocket, 2000);
             }};
         }}
@@ -869,7 +739,6 @@
                 document.getElementById('fpsDisplay').textContent = fps.toFixed(1);
                 document.getElementById('hudFps').textContent = fps.toFixed(1);
 
-                // Reset counter
                 frameCount = 0;
                 lastFrameTime = now;
             }}, 1000);
@@ -894,21 +763,17 @@
         }}
 
         function updateParam(category, parameter, value) {{
-            // Update display
             const displayElem = document.getElementById(parameter + '_val');
             if (displayElem) {{
-                // Format value based on parameter type
                 if (parameter.includes('throttle') || parameter.includes('kp') ||
-                    parameter.includes('ki') || parameter.includes('kd') ||
-                    parameter.includes('steer') || parameter.includes('smoothing') ||
-                    parameter.includes('roi') || parameter.includes('lookahead')) {{
+                    parameter.includes('steer') || parameter.includes('lookahead') ||
+                    parameter.includes('roi') || parameter.includes('confidence')) {{
                     displayElem.textContent = parseFloat(value).toFixed(2);
                 }} else {{
                     displayElem.textContent = Math.round(value);
                 }}
             }}
 
-            // Send via WebSocket
             sendWebSocketMessage({{
                 type: 'parameter',
                 category: category,
@@ -944,10 +809,8 @@
         }}
 
         function resetSystem() {{
-            // Reset vehicle: set steering to 0 and pause
             sendAction('reset');
 
-            // Reset LKAS decision module: clear PID error accumulation
             sendWebSocketMessage({{
                 type: 'parameter',
                 category: 'decision',
@@ -955,7 +818,6 @@
                 value: 1.0
             }});
 
-            // Reset LKAS detection module: clear lane smoothing history
             sendWebSocketMessage({{
                 type: 'parameter',
                 category: 'detection',
@@ -966,131 +828,40 @@
             showNotification('System reset: Vehicle paused, steering zeroed, all state cleared');
         }}
 
-        // Toggle states (default: raw image, lanes, HUD, and segmentation ON; canny and hough OFF)
         let rawImageEnabled = true;
         let lanesEnabled = true;
-        let cannyEnabled = false;
-        let houghEnabled = false;
         let hudEnabled = true;
         let segmentationEnabled = true;
 
         function toggleRawImage() {{
             rawImageEnabled = !rawImageEnabled;
             const btn = document.getElementById('rawImageToggle');
-
-            if (rawImageEnabled) {{
-                btn.classList.remove('off');
-            }} else {{
-                btn.classList.add('off');
-            }}
-
-            // Send toggle state to viewer
-            sendWebSocketMessage({{
-                type: 'toggle',
-                setting: 'raw_image',
-                enabled: rawImageEnabled
-            }});
-
+            btn.classList.toggle('off', !rawImageEnabled);
+            sendWebSocketMessage({{ type: 'toggle', setting: 'raw_image', enabled: rawImageEnabled }});
             showNotification('Raw Image ' + (rawImageEnabled ? 'enabled' : 'disabled'));
         }}
 
         function toggleLanes() {{
             lanesEnabled = !lanesEnabled;
             const btn = document.getElementById('lanesToggle');
-
-            if (lanesEnabled) {{
-                btn.classList.remove('off');
-            }} else {{
-                btn.classList.add('off');
-            }}
-
-            // Send toggle state to viewer
-            sendWebSocketMessage({{
-                type: 'toggle',
-                setting: 'lanes',
-                enabled: lanesEnabled
-            }});
-
+            btn.classList.toggle('off', !lanesEnabled);
+            sendWebSocketMessage({{ type: 'toggle', setting: 'lanes', enabled: lanesEnabled }});
             showNotification('Lanes ' + (lanesEnabled ? 'enabled' : 'disabled'));
-        }}
-
-        function toggleCanny() {{
-            cannyEnabled = !cannyEnabled;
-            const btn = document.getElementById('cannyToggle');
-
-            if (cannyEnabled) {{
-                btn.classList.remove('off');
-            }} else {{
-                btn.classList.add('off');
-            }}
-
-            // Send toggle state to viewer
-            sendWebSocketMessage({{
-                type: 'toggle',
-                setting: 'canny',
-                enabled: cannyEnabled
-            }});
-
-            showNotification('Canny ' + (cannyEnabled ? 'enabled' : 'disabled'));
-        }}
-
-        function toggleHough() {{
-            houghEnabled = !houghEnabled;
-            const btn = document.getElementById('houghToggle');
-
-            if (houghEnabled) {{
-                btn.classList.remove('off');
-            }} else {{
-                btn.classList.add('off');
-            }}
-
-            // Send toggle state to viewer
-            sendWebSocketMessage({{
-                type: 'toggle',
-                setting: 'hough',
-                enabled: houghEnabled
-            }});
-
-            showNotification('Hough ' + (houghEnabled ? 'enabled' : 'disabled'));
         }}
 
         function toggleHUD() {{
             hudEnabled = !hudEnabled;
             const btn = document.getElementById('hudToggle');
-
-            if (hudEnabled) {{
-                btn.classList.remove('off');
-            }} else {{
-                btn.classList.add('off');
-            }}
-
-            // Send toggle state to viewer
-            sendWebSocketMessage({{
-                type: 'toggle',
-                setting: 'hud',
-                enabled: hudEnabled
-            }});
-
+            btn.classList.toggle('off', !hudEnabled);
+            sendWebSocketMessage({{ type: 'toggle', setting: 'hud', enabled: hudEnabled }});
             showNotification('HUD ' + (hudEnabled ? 'enabled' : 'disabled'));
         }}
 
         function toggleSegmentation() {{
             segmentationEnabled = !segmentationEnabled;
             const btn = document.getElementById('segmentationToggle');
-
-            if (segmentationEnabled) {{
-                btn.classList.remove('off');
-            }} else {{
-                btn.classList.add('off');
-            }}
-
-            // Send toggle state to viewer
-            sendWebSocketMessage({{
-                type: 'toggle',
-                setting: 'segmentation',
-                enabled: segmentationEnabled
-            }});
-
+            btn.classList.toggle('off', !segmentationEnabled);
+            sendWebSocketMessage({{ type: 'toggle', setting: 'segmentation', enabled: segmentationEnabled }});
             showNotification('Segmentation ' + (segmentationEnabled ? 'enabled' : 'disabled'));
         }}
 
@@ -1118,12 +889,10 @@
             }}
         }});
 
-        // Connect to WebSocket on page load
         window.addEventListener('load', function() {{
             connectWebSocket();
         }});
 
-        // Clean up on page unload
         window.addEventListener('beforeunload', function() {{
             if (ws) {{
                 ws.close();

@@ -68,31 +68,10 @@ class ViewerState:
         # Visualization layer toggles
         self.show_raw_image = True
         self.show_lanes = True
-        self.show_canny = False
-        self.show_hough = False
         self.show_hud = False
-        self.show_segmentation = (self.detection_method == 'dl')
+        self.show_segmentation = True
         self.display_lock = Lock()
 
-        # ROI config cache
-        self.roi_config = {
-            'roi_bottom_left_x': config.cv_detector.roi_bottom_left_x,
-            'roi_top_left_x': config.cv_detector.roi_top_left_x,
-            'roi_top_right_x': config.cv_detector.roi_top_right_x,
-            'roi_bottom_right_x': config.cv_detector.roi_bottom_right_x,
-            'roi_top_y': config.cv_detector.roi_top_y,
-        }
-        self.roi_cache_frame_size: Optional[tuple] = None
-
-        # CV / Hough parameters (mutable via sliders)
-        self.canny_low = config.cv_detector.canny_low
-        self.canny_high = config.cv_detector.canny_high
-        self.hough_threshold = config.cv_detector.hough_threshold
-        self.hough_min_line_len = config.cv_detector.hough_min_line_len
-        self.hough_max_line_gap = config.cv_detector.hough_max_line_gap
-        self.hough_rho = config.cv_detector.hough_rho
-        self.hough_theta = config.cv_detector.hough_theta
-        self.smoothing_factor = config.cv_detector.smoothing_factor
         self.camera_offset_x = config.camera.offset_x
 
         # Lifecycle flag
@@ -354,8 +333,6 @@ class ZMQWebViewer:
             unmodified = (
                 self.state.show_raw_image
                 and not self.state.show_lanes
-                and not self.state.show_canny
-                and not self.state.show_hough
                 and not self.state.show_hud
                 and not self.state.show_segmentation
             )

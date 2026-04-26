@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import base64
 import time
-from typing import TYPE_CHECKING, Dict, Any, Optional
+from typing import TYPE_CHECKING, Dict, Any
 
 import cv2
 import numpy as np
@@ -53,12 +53,9 @@ class OverlayRenderer:
         if self.verbose:
             render_start = time.time()
 
-        # Snapshot display toggles under lock
         with state.display_lock:
             show_raw = state.show_raw_image
             show_lanes = state.show_lanes
-            show_canny = state.show_canny
-            show_hough = state.show_hough
             show_hud = state.show_hud
             show_segmentation = state.show_segmentation
 
@@ -68,34 +65,11 @@ class OverlayRenderer:
         else:
             output = np.zeros_like(state.latest_frame)
 
-        # Step 2: Canny edges (CV mode only)
-        if show_canny and state.detection_method == 'cv':
-            canny_result = self.visualizer.draw_canny_edges(
-                state.latest_frame, state.canny_low, state.canny_high,
-            )
-            output = cv2.addWeighted(output, 0.6, canny_result, 0.4, 0)
-
-        # Step 3: Hough lines (CV mode only)
-        if show_hough and state.detection_method == 'cv':
-            hough_result = self.visualizer.draw_hough_lines(
-                state.latest_frame,
-                roi_config=state.roi_config,
-                canny_low=state.canny_low,
-                canny_high=state.canny_high,
-                hough_rho=state.hough_rho,
-                hough_theta=state.hough_theta,
-                hough_threshold=state.hough_threshold,
-                min_line_len=state.hough_min_line_len,
-                max_line_gap=state.hough_max_line_gap,
-            )
-            mask = np.any(hough_result > 0, axis=2)
-            output[mask] = hough_result[mask]
-
-        # Step 3.5: DL segmentation mask
+        # Step 2: DL segmentation mask
         if show_segmentation and state.latest_detection:
             self._apply_segmentation(output, state.latest_detection)
 
-        # Step 4: Lane detection overlays
+        # Step 3: Lane polynomial overlays
         if show_lanes:
             try:
                 self._apply_lane_overlays(output, state)
@@ -104,19 +78,17 @@ class OverlayRenderer:
                     print(f"[Overlay] Warning: Lane overlay failed: {e}")
                     self._overlay_error_logged = True
 
-        # Step 5: HUD on top
+        # Step 4: HUD on top
         if show_hud:
             self._draw_hud(output, state)
 
-        # Timing diagnostics
         if self.verbose:
             total_ms = (time.time() - render_start) * 1000
             if total_ms > 30:
                 layers = []
                 if show_raw: layers.append("raw")
+                if show_segmentation: layers.append("seg")
                 if show_lanes: layers.append("lanes")
-                if show_canny: layers.append("canny")
-                if show_hough: layers.append("hough")
                 if show_hud: layers.append("hud")
                 print(f"  [Render Warn] Total: {total_ms:.1f}ms | Layers: {'+'.join(layers)}")
 
@@ -138,43 +110,21 @@ class OverlayRenderer:
             print(f"[Overlay] Warning: Failed to decode segmentation mask: {e}")
 
     # ------------------------------------------------------------------
-    # Lane Overlays (routing between DL and CV modes)
+    # Lane Overlays
     # ------------------------------------------------------------------
 
     def _apply_lane_overlays(self, output: np.ndarray, state: ViewerState):
-        """
-        Draw lane detection overlays.
-
-        DL mode: polynomial debug overlay (segmentation mask already drawn in step 3.5).
-        CV mode: ROI trapezoid + left/right lane lines.
-        """
-        if state.detection_method == 'dl':
-            if state.latest_detection:
-                self.visualizer.draw_polynomials(
-                    output,
-                    left_poly=getattr(state.latest_detection, 'left_poly', None),
-                    right_poly=getattr(state.latest_detection, 'right_poly', None),
-                    center_poly=getattr(state.latest_detection, 'center_poly', None),
-                    left_confidence=getattr(state.latest_detection, 'left_confidence', 0.0),
-                    right_confidence=getattr(state.latest_detection, 'right_confidence', 0.0),
-                    camera_offset_x=state.camera_offset_x,
-                )
-            return
-
-        # CV mode: ROI + lane lines
-        self.visualizer.draw_roi(output, state.roi_config)
-
+        """Draw polynomial lane boundaries from DL detection."""
         if state.latest_detection:
-            left_lane = None
-            right_lane = None
-            if state.latest_detection.left_lane:
-                ll = state.latest_detection.left_lane
-                left_lane = (int(ll['x1']), int(ll['y1']), int(ll['x2']), int(ll['y2']))
-            if state.latest_detection.right_lane:
-                rl = state.latest_detection.right_lane
-                right_lane = (int(rl['x1']), int(rl['y1']), int(rl['x2']), int(rl['y2']))
-            modified = self.visualizer.draw_lanes(output, left_lane, right_lane, fill_lane=True)
-            np.copyto(output, modified)
+            self.visualizer.draw_polynomials(
+                output,
+                left_poly=getattr(state.latest_detection, 'left_poly', None),
+                right_poly=getattr(state.latest_detection, 'right_poly', None),
+                center_poly=getattr(state.latest_detection, 'center_poly', None),
+                left_confidence=getattr(state.latest_detection, 'left_confidence', 0.0),
+                right_confidence=getattr(state.latest_detection, 'right_confidence', 0.0),
+                camera_offset_x=state.camera_offset_x,
+            )
 
     # ------------------------------------------------------------------
     # HUD (state extraction + delegate)
@@ -198,7 +148,6 @@ class OverlayRenderer:
             )
             np.copyto(output, modified)
 
-        # Performance overlay (verbose only — viewer-specific)
         if self.verbose and state.latest_frame_metadata:
             self._draw_performance_overlay(output, state)
 
