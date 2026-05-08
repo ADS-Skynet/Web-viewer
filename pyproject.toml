@@ -42,7 +42,7 @@ dependencies = [
     "websockets>=11.0.0,<14.0.0",
 
     # Inter-module dependencies (lightweight common package only - no CARLA!)
-    "skynet-common @ git+https://github.com/ADS-Skynet/Common.git@lane-detection-dl#egg=skynet-common",
+    "skynet-common @ git+https://github.com/ADS-Skynet/Common.git",
 ]
 
 # Optional dependency groups
